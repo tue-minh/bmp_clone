@@ -1,0 +1,8 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "tue_ams1117")(type "KiCad")(uri "E:/Project_Kicad/LIB/IC/tue_AMS1117/tue_ams1117.pretty")(options "")(descr ""))
+  (lib (name "tue_tantalum")(type "KiCad")(uri "E:/Project_Kicad/LIB/Capacitor/tue_tantalum.pretty")(options "")(descr ""))
+  (lib (name "tue_stm32bluepill")(type "KiCad")(uri "E:/Project_Kicad/LIB/IC/tue_STM32F103C8T6/tue_stm32bluepill.pretty")(options "")(descr ""))
+  (lib (name "tue_switch_SS12D00")(type "KiCad")(uri "E:/Project_Kicad/LIB/Switch/SS12D00/tue_switch_SS12D00.pretty")(options "")(descr ""))
+  (lib (name "tue_Connectors_USB")(type "KiCad")(uri "E:/Project_Kicad/LIB/Usb/Connectors_USB.pretty")(options "")(descr ""))
+)

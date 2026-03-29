@@ -2,6 +2,19 @@
 
 This guide provides detailed instructions for loading Blackmagic firmware onto the Bluepill board using either an ST-Link or Black Magic Probe (BMP).
 
+
+<table align="center">
+  <tr>
+    <th>Front</th>
+    <th>Back</th>
+  </tr>
+  <tr>
+    <td><img src="image/front.jpg" width="300"/></td>
+    <td><img src="image/back.jpg" width="300"/></td>
+  </tr>
+</table>
+
+
 ---
 
 ## 📂 1. Prepare the Firmware Files

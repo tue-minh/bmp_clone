@@ -63,7 +63,7 @@ st-flash --flash=0x20000 --reset write .../blackmagic-firmware-v1.10.2/bluepill/
 Run GDB and execute the following commands:
 ```bash
 # Connect to BMP (replace COMx with the appropriate port)
-target extended-remote COMx           # For Windows
+target extended-remote \\.\COMx           # For Windows
 target extended-remote /dev/tty*      # For Linux
 
 monitor swdp_scan

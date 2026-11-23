@@ -191,7 +191,7 @@ static int8_t CUSTOM_HID_OutEvent_FS(uint8_t event_idx, uint8_t state)
   UNUSED(state);
 
   USBD_CUSTOM_HID_HandleTypeDef *hhid =
-      (USBD_CUSTOM_HID_HandleTypeDef *)hUsbDeviceFS.pClassData;
+      (USBD_CUSTOM_HID_HandleTypeDef *)hUsbDeviceFS.pClassDataCmsit[hUsbDeviceFS.classId];
   if (hhid != NULL)
   {
     DAP_USB_OutCallback(hhid->Report_buf);

@@ -6,9 +6,10 @@ Firmware biến vi điều khiển **STM32F401RCT6** thành mạch nạp và deb
 
 ## 1. Tính năng chính
 
-1. **Mạch nạp & Debug chuẩn ARM CMSIS-DAP v1.10 qua USB (`TUE CMSIS-DAP`):**
-   * Cắm USB (`PA11`/`PA12`) vào PC là nhận ngay thiết bị **USB HID (`VID=0x0483`, `PID=0x5750`, Product=`"TUE CMSIS-DAP"`)** không cần cài driver (Driverless trên Windows / Linux / macOS).
-   * Tương thích trực tiếp với **OpenOCD**, **pyOCD**, **Probe-rs**, **Keil MDK**, **STM32CubeIDE**, **VSCode (Cortex-Debug)** để **nạp code + đặt breakpoint / step debug** cho mọi dòng ARM Cortex-M (**STM32F0, F1, F2, F3, F4, F7, G0, G4, L0, L4, H7**, GD32, nRF52, RP2040...).
+1. **Mạch nạp & Debug chuẩn ARM CMSIS-DAP v1.10 + Cổng COM ảo USB CDC (USB Composite):**
+   * Cắm 1 sợi cáp USB (`PA11`/`PA12`) vào PC sẽ nhận **đồng thời 2 thiết bị** (`VID=0x0483`, `PID=0x5752`, Product=`"TUE CMSIS-DAP + UART"`), **không cần cài driver** trên Windows 10/11 & Ubuntu:
+     * **Interface 0 (`Custom HID`):** Mạch nạp & debug **CMSIS-DAP v1.10** tương thích trực tiếp với **OpenOCD, pyOCD, Probe-rs, Keil MDK, STM32CubeIDE, VSCode** và GUI đi kèm cho **STM32F0, F1, F2, F3, F4, G0, G4, L4, H7...**
+     * **Interface 1–2 (`USB CDC Virtual COM Port`):** Tự hiện cổng `COMx` / `/dev/ttyACMx` làm cầu nối **USB-to-UART (`USART1`: `PA9` TX / `PB7` RX)**, hỗ trợ tự động đổi baudrate theo phần mềm Terminal trên PC!
 2. **Driver SWD thanh ghi tốc độ cao ([Core/Src/swd.c](Core/Src/swd.c)):**
    * Được port từ `ESP_OTA_STM32/src/swd.cpp` sang điều khiển trực tiếp thanh ghi `GPIOx->BSRR`, `IDR`, `MODER` của STM32F401.
    * Định thời chính xác bằng bộ đếm chu kỳ CPU **`DWT->CYCCNT`** (hỗ trợ thay đổi xung nhịp `DAP_SWJ_Clock`, cấu hình turnaround `1..4` chu kỳ, `idle_cycles`, `wait_retry`).

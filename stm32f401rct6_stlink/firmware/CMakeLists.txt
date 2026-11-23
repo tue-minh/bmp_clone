@@ -48,6 +48,17 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/swd.c
     Core/Src/dap.c
     Core/Src/stm32_target.c
+    USB_DEVICE/App/usbd_cdc_if.c
+)
+
+# Add Composite + CDC middleware paths & sources into CubeMX targets
+target_include_directories(stm32cubemx INTERFACE
+    Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc
+    Middlewares/ST/STM32_USB_Device_Library/Class/CompositeBuilder/Inc
+)
+target_sources(USB_Device_Library PRIVATE
+    Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c
+    Middlewares/ST/STM32_USB_Device_Library/Class/CompositeBuilder/Src/usbd_composite_builder.c
 )
 
 # Add include paths

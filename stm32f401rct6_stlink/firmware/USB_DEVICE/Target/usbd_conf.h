@@ -35,8 +35,18 @@
 #include "stm32f4xx_hal.h"
 
 /* USER CODE BEGIN INCLUDE */
-#define CUSTOM_HID_EPIN_SIZE      0x40U
-#define CUSTOM_HID_EPOUT_SIZE     0x40U
+#define USE_USBD_COMPOSITE
+#define USBD_CMPSIT_ACTIVATE_CUSTOMHID 1U
+#define USBD_CMPSIT_ACTIVATE_CDC       1U
+#define USBD_COMPOSITE_USE_IAD         1U
+#define USBD_CMPST_MAX_CONFDESC_SZ     160U
+#define USBD_MAX_SUPPORTED_CLASS       2U
+
+#define CUSTOM_HID_EPIN_SIZE           0x40U
+#define CUSTOM_HID_EPOUT_SIZE          0x40U
+#define CDC_IN_EP                      0x82U
+#define CDC_OUT_EP                     0x02U
+#define CDC_CMD_EP                     0x83U
 /* USER CODE END INCLUDE */
 
 /** @addtogroup USBD_OTG_DRIVER
@@ -64,7 +74,7 @@
   */
 
 /*---------- -----------*/
-#define USBD_MAX_NUM_INTERFACES     1U
+#define USBD_MAX_NUM_INTERFACES     3U
 /*---------- -----------*/
 #define USBD_MAX_NUM_CONFIGURATION     1U
 /*---------- -----------*/

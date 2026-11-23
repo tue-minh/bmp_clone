@@ -1523,8 +1523,8 @@ class TueDapGui(tk.Tk):
         self.uart_cmd_var = tk.StringVar()
         ent = ttk.Entry(r3, textvariable=self.uart_cmd_var, width=50)
         ent.pack(side="left", padx=(0, 6), fill="x", expand=True)
-        ent.bind("<Return>", lambda e: self.send_serial_cmd(self.uart_cmd_var.get()))
-        ttk.Button(r3, text="Gui lenh", command=lambda: self.send_serial_cmd(self.uart_cmd_var.get())).pack(side="left")
+        ent.bind("<Return>", lambda e: self.send_serial_cmd(self.uart_cmd_var.get(), clear_entry=True))
+        ttk.Button(r3, text="Gui lenh", command=lambda: self.send_serial_cmd(self.uart_cmd_var.get(), clear_entry=True)).pack(side="left")
 
     # -----------------------------------------------------------------------
     # Logging & Helpers
@@ -2062,7 +2062,7 @@ class TueDapGui(tk.Tk):
         except Exception as e:
             self.log(f"LOI mo {port_name}: {e}")
 
-    def send_serial_cmd(self, cmd: str):
+    def send_serial_cmd(self, cmd: str, clear_entry: bool = False):
         if not self.serial_port or not self.serial_port.is_open:
             self.log("Chua mo cong COM trong tab UART CLI.")
             return
@@ -2071,6 +2071,8 @@ class TueDapGui(tk.Tk):
             return
         self.serial_port.write((cmd + "\r\n").encode("utf-8"))
         self.log(f"[UART TX] {cmd}")
+        if clear_entry:
+            self.uart_cmd_var.set("")
 
     def _on_close(self):
         self.serial_stop.set()

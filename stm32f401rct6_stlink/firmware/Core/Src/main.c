@@ -30,6 +30,7 @@
 #include "swd.h"
 #include "dap.h"
 #include "stm32_target.h"
+#include "usbd_cdc_if.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -160,7 +161,7 @@ static void processCliCommand(char *cmd)
 
 static void serviceButtonAndCli(void)
 {
-  /* PA0 (MCU_BUTTON, active LOW with internal pull-up): short press -> probe target */
+  /* PA0 (MCU_BUTTON, active LOW with internal pull-up): short press -> toggle LED */
   static uint8_t  lastBtn = GPIO_PIN_SET;
   static uint32_t lastDebounceMs = 0U;
   uint8_t rawBtn = (uint8_t)HAL_GPIO_ReadPin(MCU_BUTTON_GPIO_Port, MCU_BUTTON_Pin);
@@ -173,32 +174,11 @@ static void serviceButtonAndCli(void)
     if (rawBtn == GPIO_PIN_RESET)
     {
       HAL_GPIO_TogglePin(MCU_LED_GPIO_Port, MCU_LED_Pin);
-      printTargetProbe();
     }
   }
-
-  if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_ORE) != RESET)
-  {
-    __HAL_UART_CLEAR_OREFLAG(&huart1);
-  }
-
-  while (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_RXNE) != RESET)
-  {
-    char c = (char)(huart1.Instance->DR & 0xFFU);
-    if (c == '\n' || c == '\r')
-    {
-      if (s_cliPos > 0U)
-      {
-        s_cliLine[s_cliPos] = '\0';
-        s_cliPos = 0U;
-        processCliCommand(s_cliLine);
-      }
-    }
-    else if (s_cliPos + 1U < sizeof(s_cliLine))
-    {
-      s_cliLine[s_cliPos++] = c;
-    }
-  }
+  (void)s_cliLine;
+  (void)s_cliPos;
+  (void)processCliCommand;
 }
 /* USER CODE END 0 */
 
@@ -235,9 +215,6 @@ int main(void)
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
   DAP_Init();
-  printf("\r\n=== TUE CMSIS-DAP & Multi-STM32 SWD Probe (STM32F401RCT6) ===\r\n");
-  printf("Pins: SWDIO=PA4 | SWCLK=PB4 | NRST=PB8 | BTN=PA0 | LED=PC13\r\n");
-  printf("Type 'help' or 'probe' on USART1 (115200 8N1)\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -245,6 +222,7 @@ int main(void)
   while (1)
   {
     DAP_Task();
+    CDC_UART_Task();
     serviceButtonAndCli();
     /* USER CODE END WHILE */
 

@@ -25,6 +25,7 @@
 #include "usbd_core.h"
 
 #include "usbd_customhid.h"
+#include "usbd_cdc.h"
 
 /* USER CODE BEGIN Includes */
 
@@ -354,9 +355,11 @@ USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev)
   HAL_PCD_RegisterIsoOutIncpltCallback(&hpcd_USB_OTG_FS, PCD_ISOOUTIncompleteCallback);
   HAL_PCD_RegisterIsoInIncpltCallback(&hpcd_USB_OTG_FS, PCD_ISOINIncompleteCallback);
 #endif /* USE_HAL_PCD_REGISTER_CALLBACKS */
-  HAL_PCDEx_SetRxFiFo(&hpcd_USB_OTG_FS, 0x80);
-  HAL_PCDEx_SetTxFiFo(&hpcd_USB_OTG_FS, 0, 0x40);
-  HAL_PCDEx_SetTxFiFo(&hpcd_USB_OTG_FS, 1, 0x80);
+  HAL_PCDEx_SetRxFiFo(&hpcd_USB_OTG_FS, 0x90);
+  HAL_PCDEx_SetTxFiFo(&hpcd_USB_OTG_FS, 0, 0x20);
+  HAL_PCDEx_SetTxFiFo(&hpcd_USB_OTG_FS, 1, 0x40);
+  HAL_PCDEx_SetTxFiFo(&hpcd_USB_OTG_FS, 2, 0x40);
+  HAL_PCDEx_SetTxFiFo(&hpcd_USB_OTG_FS, 3, 0x10);
   }
   return USBD_OK;
 }
@@ -614,20 +617,47 @@ USBD_StatusTypeDef USBD_LL_SetTestMode(USBD_HandleTypeDef *pdev, uint8_t testmod
   * @param  size: Size of allocated memory
   * @retval None
   */
+typedef struct
+{
+  uint8_t  used;
+  uint32_t data[160]; /* 640 bytes per class handle (covers CDC ~548B & HID ~88B) */
+} UsbdStaticSlot_t;
+
+static UsbdStaticSlot_t s_usbdMemSlots[2] = {0};
+
 void *USBD_static_malloc(uint32_t size)
 {
-  static uint32_t mem[(sizeof(USBD_CUSTOM_HID_HandleTypeDef)/4+1)];/* On 32-bit boundary */
-  return mem;
+  if (size > sizeof(s_usbdMemSlots[0].data))
+  {
+    return NULL;
+  }
+  for (uint32_t i = 0U; i < 2U; i++)
+  {
+    if (s_usbdMemSlots[i].used == 0U)
+    {
+      s_usbdMemSlots[i].used = 1U;
+      memset(s_usbdMemSlots[i].data, 0, sizeof(s_usbdMemSlots[i].data));
+      return s_usbdMemSlots[i].data;
+    }
+  }
+  return NULL;
 }
 
 /**
-  * @brief  Dummy memory free
-  * @param  p: Pointer to allocated  memory address
+  * @brief  Static memory free
+  * @param  p: Pointer to allocated memory address
   * @retval None
   */
 void USBD_static_free(void *p)
 {
-
+  for (uint32_t i = 0U; i < 2U; i++)
+  {
+    if (p == (void *)s_usbdMemSlots[i].data)
+    {
+      s_usbdMemSlots[i].used = 0U;
+      break;
+    }
+  }
 }
 
 /**

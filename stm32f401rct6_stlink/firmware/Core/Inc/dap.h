@@ -42,6 +42,9 @@ extern "C" {
 #define DAP_PORT_SWD              0x01U
 #define DAP_PORT_JTAG             0x02U
 
+/* Set Composite USB Class ID assigned to Custom HID */
+void DAP_SetUsbClassId(uint8_t classId);
+
 /* Initialize CMSIS-DAP state & queue */
 void DAP_Init(void);
 

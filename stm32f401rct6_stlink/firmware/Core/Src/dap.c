@@ -35,6 +35,7 @@ static const char kFwVerStr[]   = "1.10";
 
 static uint8_t  s_debugPort = DAP_PORT_DISABLED;
 static uint32_t s_matchMask = 0x00000000UL;
+static uint8_t  s_hidClassId = 0U;
 
 /* Ring buffer for 64-byte HID packets between USB ISR and main loop */
 static uint8_t           s_rxQueue[DAP_PACKET_COUNT][DAP_PACKET_SIZE];
@@ -763,6 +764,11 @@ uint32_t DAP_ProcessCommand(const uint8_t *request, uint8_t *response)
 /* USB Custom HID Integration                                                 */
 /* -------------------------------------------------------------------------- */
 
+void DAP_SetUsbClassId(uint8_t classId)
+{
+  s_hidClassId = classId;
+}
+
 void DAP_Init(void)
 {
   swdTimeInit();
@@ -814,7 +820,7 @@ void DAP_Task(void)
   }
 
   USBD_CUSTOM_HID_HandleTypeDef *hhid =
-      (USBD_CUSTOM_HID_HandleTypeDef *)hUsbDeviceFS.pClassData;
+      (USBD_CUSTOM_HID_HandleTypeDef *)hUsbDeviceFS.pClassDataCmsit[s_hidClassId];
   if (hhid != NULL && hhid->state != CUSTOM_HID_IDLE)
   {
     /* Wait until previous USB IN report finishes transmitting */
@@ -836,9 +842,10 @@ void DAP_Task(void)
 
   if (resumeOut)
   {
+    hUsbDeviceFS.classId = s_hidClassId;
     USBD_CUSTOM_HID_ReceivePacket(&hUsbDeviceFS);
   }
 
   DAP_ProcessCommand(reqBuf, s_txBuf);
-  USBD_CUSTOM_HID_SendReport(&hUsbDeviceFS, s_txBuf, DAP_PACKET_SIZE);
+  USBD_CUSTOM_HID_SendReport(&hUsbDeviceFS, s_txBuf, DAP_PACKET_SIZE, s_hidClassId);
 }

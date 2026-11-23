@@ -130,16 +130,26 @@ Khi chưa mở phiên debug trên PC, bạn có thể dùng Terminal (`115200 8N
 
 ---
 
-## 7. Công cụ GUI Test trên Windows ([gui/tue_dap_gui.py](gui/tue_dap_gui.py))
+## 7. Công cụ GUI Test trên Windows & Ubuntu ([gui/tue_dap_gui.py](gui/tue_dap_gui.py))
 
-Chạy thẳng bằng Python (không cần cài thêm thư viện ngoài cho phần USB HID):
-
-```powershell
-python gui\tue_dap_gui.py
-```
+* **Chạy trực tiếp bản Windows `.exe` (không cần cài Python, không cần OpenOCD, không cần driver):**
+  Mở [gui/dist/windows/TUE_CMSIS_DAP.exe](gui/dist/windows/TUE_CMSIS_DAP.exe) (hoặc build lại bằng `gui/build_windows.ps1`).
+* **Trên Ubuntu / Linux:**
+  * Hỗ trợ sẵn kernel `hidraw` (`/dev/hidraw*`), không cần thư viện ngoài.
+  * Cài udev rule (để không cần `sudo`) và đóng gói thành app Ubuntu bằng script [gui/build_ubuntu.sh](gui/build_ubuntu.sh):
+    ```bash
+    cd firmware/gui
+    chmod +x build_ubuntu.sh
+    ./build_ubuntu.sh
+    ./dist/TUE_CMSIS_DAP
+    ```
+* **Hoặc chạy thẳng bằng Python:**
+  ```powershell
+  python gui\tue_dap_gui.py
+  ```
 
 GUI hỗ trợ 3 tab:
-* **SWD & Target Probe:** Quét thiết bị HID, đọc `DAP_Info`, bật/tắt LED `PC13`, kích xung Reset `PB8`, tự nhận diện chip đích (F1/F3/F4/G4/L4/F0/G0...) và đọc bộ nhớ 32-bit.
-* **Nạp Code & Debug (OpenOCD):** Tích hợp sẵn `openocd.exe` để test kết nối, nạp `.bin`/`.elf`/`.hex` và bật GDB Server (`:3333`).
+* **Nạp Code & Probe Trực Tiếp (Không cần OpenOCD):** Quét thiết bị HID, đọc `DAP_Info`, bật/tắt LED `PC13`, kích xung Reset `PB8`, tự nhận diện chip đích (F1/F3/F4/G4/L4/F0/G0...) và **nạp/verify trực tiếp file `.bin`, `.hex`, `.elf` qua USB HID** cho STM32F1/F3/F4/G4/L4 (có thanh tiến trình & Connect-Under-Reset `PB8`).
+* **OpenOCD & GDB Debug Server (Tùy chọn):** Tích hợp sẵn `openocd.exe` để test kết nối, nạp `.bin`/`.elf`/`.hex` hoặc bật GDB Server (`:3333`).
 * **UART CLI:** Kết nối `USART1` (`115200`) để gửi nhanh lệnh `probe`, `link`, `reset`, `halt`, `run`.
 

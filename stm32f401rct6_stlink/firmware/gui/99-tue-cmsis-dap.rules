@@ -1,0 +1,4 @@
+# Allow non-root access to TUE CMSIS-DAP (STM32F401RCT6) on Ubuntu/Linux
+# Install: sudo cp 99-tue-cmsis-dap.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5750", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5750", MODE="0666", TAG+="uaccess"

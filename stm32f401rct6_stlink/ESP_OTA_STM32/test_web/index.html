@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>Test Local - HTTP + MQTT STM32 OTA</title>
+  <style>
+    body { font-family: sans-serif; max-width: 820px; margin: 20px auto; line-height: 1.5; }
+    .box { border: 1px solid #ccc; padding: 10px 14px; border-radius: 6px; margin-bottom: 12px; background: #fafafa; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
+    .ok { background: #d4edda; color: #155724; }
+    .err { background: #f8d7da; color: #721c24; }
+    .unk { background: #e2e3e5; color: #383d41; }
+    pre { background: #1e1e1e; color: #dcdcdc; padding: 12px; border-radius: 6px; max-height: 360px; overflow: auto; }
+    button { margin: 3px 4px 3px 0; padding: 6px 10px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h3>Test Local: HTTP .bin + MQTTS STM32 OTA</h3>
+
+  <div class="box">
+    <div><b>PC MQTTS listener:</b> <span id="pcMqtt" class="badge unk">Dang ket noi...</span></div>
+    <div><b>ESP32:</b> <span id="esp32Info">Chua nhan duoc tin hieu tu ESP32</span></div>
+    <div>
+      <b>Ket noi STM32 (SWD):</b>
+      <span id="stm32Badge" class="badge unk">Chua kiem tra</span>
+      <span id="stm32Detail"></span>
+    </div>
+    <div><b>Tien trinh nap:</b> <span id="flashDetail">-</span></div>
+  </div>
+
+  <p>
+    <b>File .bin tren server local:</b> <span id="binStatus">Chua co file</span><br>
+    <b>URL cho ESP32 tai:</b> <input type="text" id="binUrl" size="55" value="">
+  </p>
+
+  <p>
+    <input type="file" id="binFile" accept=".bin">
+    <button type="button" onclick="uploadBin()">1. Nap file .bin len local server</button>
+  </p>
+
+  <hr>
+
+  <p><b>Gui lenh MQTT:</b></p>
+  <p>
+    <button type="button" onclick="sendMqtt('esp32/to_stm32/check', 'check')">Kiem tra ket noi STM32</button>
+    <button type="button" onclick="sendFlash()">Flash STM32 (esp32/to_stm32/flash)</button>
+    <button type="button" onclick="sendMqtt('esp32/to_stm32/reset/stm32', 'reset')">Reset STM32</button>
+    <button type="button" onclick="sendMqtt('esp32/to_stm32/reset/ec600n', 'reset')">Reset EC600N</button>
+    <button type="button" onclick="sendMqtt('stm32/to_esp32/reset', 'reset')">Reset ESP32</button>
+  </p>
+
+  <hr>
+
+  <p><b>Log:</b> <button type="button" onclick="refreshInfo()">Lam moi</button></p>
+  <pre id="log"></pre>
+
+  <script>
+    const urlInput = document.getElementById('binUrl');
+    const binStatus = document.getElementById('binStatus');
+    const logEl = document.getElementById('log');
+    const pcMqttEl = document.getElementById('pcMqtt');
+    const esp32InfoEl = document.getElementById('esp32Info');
+    const stm32BadgeEl = document.getElementById('stm32Badge');
+    const stm32DetailEl = document.getElementById('stm32Detail');
+    const flashDetailEl = document.getElementById('flashDetail');
+    let urlEdited = false;
+
+    urlInput.addEventListener('input', () => { urlEdited = true; });
+
+    async function refreshInfo() {
+      try {
+        const res = await fetch('/info');
+        const data = await res.json();
+        if (!urlEdited && data.bin_url) {
+          urlInput.value = data.bin_url;
+        }
+        if (data.size > 0) {
+          binStatus.textContent = data.filename + ' (' + data.size + ' bytes)';
+        } else {
+          binStatus.textContent = 'Chua co file';
+        }
+
+        const st = data.status || {};
+        pcMqttEl.textContent = st.pc_mqtt_connected ? 'Da ket noi' : 'Mat ket noi';
+        pcMqttEl.className = 'badge ' + (st.pc_mqtt_connected ? 'ok' : 'err');
+
+        if (st.esp32_last_seen) {
+          esp32InfoEl.textContent = 'Online (IP ' + (st.esp32_ip || '?') + ', cap nhat luc ' + st.esp32_last_seen + ')';
+        } else {
+          esp32InfoEl.textContent = 'Chua nhan duoc tin hieu tu ESP32';
+        }
+
+        if (st.stm32_state === 'CONNECTED') {
+          stm32BadgeEl.textContent = 'DA KET NOI';
+          stm32BadgeEl.className = 'badge ok';
+        } else if (st.stm32_state === 'DISCONNECTED') {
+          stm32BadgeEl.textContent = 'CHUA KET NOI';
+          stm32BadgeEl.className = 'badge err';
+        } else {
+          stm32BadgeEl.textContent = 'Chua kiem tra';
+          stm32BadgeEl.className = 'badge unk';
+        }
+        stm32DetailEl.textContent = st.stm32_detail ? ' — ' + st.stm32_detail : '';
+        flashDetailEl.textContent = st.flash_detail || '-';
+
+        logEl.textContent = (data.logs || []).join('\n');
+        logEl.scrollTop = logEl.scrollHeight;
+      } catch (err) {
+        logEl.textContent += '\n[UI] Loi doc /info: ' + err.message;
+      }
+    }
+
+    async function uploadBin() {
+      const fileInput = document.getElementById('binFile');
+      const file = fileInput.files[0];
+      if (!file) {
+        alert('Chon file .bin truoc');
+        return;
+      }
+      try {
+        const res = await fetch('/upload?name=' + encodeURIComponent(file.name), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: file
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          alert('Upload loi: ' + (data.error || res.status));
+        }
+      } catch (err) {
+        alert('Upload loi: ' + err.message);
+      }
+      await refreshInfo();
+    }
+
+    async function sendFlash() {
+      const url = urlInput.value.trim();
+      if (!url) {
+        alert('URL file .bin dang trong');
+        return;
+      }
+      await sendMqtt('esp32/to_stm32/flash', url);
+    }
+
+    async function sendMqtt(topic, payload) {
+      try {
+        const res = await fetch('/mqtt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic, payload })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          alert('MQTT loi: ' + (data.error || res.status));
+        }
+      } catch (err) {
+        alert('MQTT loi: ' + err.message);
+      }
+      await refreshInfo();
+    }
+
+    refreshInfo();
+    setInterval(refreshInfo, 1500);
+  </script>
+</body>
+</html>

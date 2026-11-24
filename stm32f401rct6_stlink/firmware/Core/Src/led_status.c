@@ -1,10 +1,11 @@
 #include "led_status.h"
 #include "main.h"
 
-static LedState_t s_baseState          = LED_STATE_IDLE;
-static uint32_t   s_errorUntilTick     = 0U;
-static uint32_t   s_activityUntilTick  = 0U;
-static uint32_t   s_debugCmdStartTick  = 0U;
+static LedState_t s_baseState            = LED_STATE_IDLE;
+static uint32_t   s_errorUntilTick       = 0U;
+static uint32_t   s_activityUntilTick    = 0U;
+static uint32_t   s_debugCmdStartTick    = 0U;
+static bool       s_debugCmdPulseActive  = false;
 
 static inline void ledSetRaw(bool on)
 {
@@ -18,12 +19,18 @@ void ledStatusInit(void)
   s_errorUntilTick = 0U;
   s_activityUntilTick = 0U;
   s_debugCmdStartTick = 0U;
+  s_debugCmdPulseActive = false;
   ledSetRaw(false);
 }
 
 void ledStatusSetState(LedState_t state)
 {
-  s_baseState = state;
+  if (s_baseState != state)
+  {
+    s_baseState = state;
+    s_debugCmdPulseActive = false;
+    s_activityUntilTick = 0U;
+  }
 }
 
 LedState_t ledStatusGetState(void)
@@ -33,14 +40,19 @@ LedState_t ledStatusGetState(void)
 
 void ledStatusDebugCommandPulse(void)
 {
-  /* Nháy 3 lần liên tục (3 chu kỳ 120ms = 360ms: 60ms Tắt, 60ms Sáng) rồi lại Solid ON */
-  s_debugCmdStartTick = HAL_GetTick();
+  /* Nháy 3 lần liên tục (3 chu kỳ 180ms = 540ms: 90ms Tắt, 90ms Sáng) rồi lại Solid ON.
+   * Không reset bộ đếm nếu chuỗi 3 nháy đang chạy để tránh méo nhịp khi 1 lệnh gửi nhiều gói USB. */
+  if (!s_debugCmdPulseActive)
+  {
+    s_debugCmdPulseActive = true;
+    s_debugCmdStartTick = HAL_GetTick();
+  }
 }
 
 void ledStatusActivityPulse(void)
 {
-  /* Kích hoạt nháy liên tục trong ít nhất 100ms khi có transfer dữ liệu */
-  s_activityUntilTick = HAL_GetTick() + 100U;
+  /* Kích hoạt nháy liên tục trong ít nhất 120ms khi có transfer dữ liệu */
+  s_activityUntilTick = HAL_GetTick() + 120U;
 }
 
 void ledStatusSetErrorTemporary(uint32_t durationMs)
@@ -48,12 +60,17 @@ void ledStatusSetErrorTemporary(uint32_t durationMs)
   s_errorUntilTick = HAL_GetTick() + durationMs;
 }
 
+void ledStatusClearError(void)
+{
+  s_errorUntilTick = 0U;
+}
+
 void ledStatusUpdate(void)
 {
   uint32_t now = HAL_GetTick();
 
   /* 1. Ưu tiên cao nhất: Báo lỗi tạm thời */
-  if (now < s_errorUntilTick || s_baseState == LED_STATE_ERROR)
+  if ((s_errorUntilTick != 0U && (int32_t)(s_errorUntilTick - now) > 0) || s_baseState == LED_STATE_ERROR)
   {
     uint32_t t = now % 800U;
     bool on = (t < 60U) ||
@@ -62,9 +79,11 @@ void ledStatusUpdate(void)
     ledSetRaw(on);
     return;
   }
+  s_errorUntilTick = 0U;
 
-  /* 2. Đang có tác vụ Flash / Erase / Verify tác động tới chip (nháy liên tục cho đến khi hoàn thành) */
-  if (s_baseState == LED_STATE_BUSY_FLASHING || (s_baseState != LED_STATE_DEBUG && now < s_activityUntilTick))
+  /* 2. Đang có tác vụ Flash / Erase / Verify / thao tác chip không phải debug: nháy liên tục đến khi xong */
+  if (s_baseState == LED_STATE_BUSY_FLASHING ||
+      (s_baseState != LED_STATE_DEBUG && s_activityUntilTick != 0U && (int32_t)(s_activityUntilTick - now) > 0))
   {
     /* Flicker nhanh 12.5Hz (chu kỳ 80ms: 40ms Sáng, 40ms Tắt) */
     uint32_t t = now % 80U;
@@ -79,12 +98,20 @@ void ledStatusUpdate(void)
     {
       /* Debug mode: LED sáng liên tục.
        * Khi ra lệnh lúc đang debug: nháy 3 lần liên tục rồi lại sáng liên tục */
-      uint32_t elapsed = now - s_debugCmdStartTick;
-      if (elapsed < 360U)
+      if (s_debugCmdPulseActive)
       {
-        uint32_t t = elapsed % 120U;
-        /* Chớp: 60ms TẮT / 60ms SÁNG */
-        ledSetRaw(t >= 60U);
+        uint32_t elapsed = now - s_debugCmdStartTick;
+        if (elapsed < 540U)
+        {
+          uint32_t t = elapsed % 180U;
+          /* Chớp 90ms TẮT / 90ms SÁNG x 3 nhịp */
+          ledSetRaw(t >= 90U);
+        }
+        else
+        {
+          s_debugCmdPulseActive = false;
+          ledSetRaw(true); /* Quay lại sáng liên tục */
+        }
       }
       else
       {
@@ -107,9 +134,9 @@ void ledStatusUpdate(void)
     default:
     {
       /* Khi không kết nối: Blink LED bình thường (blink 1 lần / chu kỳ 1s)
-       * Chu kỳ 1000ms: Sáng 80ms, Tắt 920ms */
+       * Chu kỳ 1000ms: Sáng 100ms, Tắt 900ms */
       uint32_t t = now % 1000U;
-      bool on = (t < 80U);
+      bool on = (t < 100U);
       ledSetRaw(on);
       break;
     }

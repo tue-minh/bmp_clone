@@ -187,6 +187,11 @@ static void serviceButtonAndCli(void)
       ledStatusActivityPulse();
     }
   }
+  if (rawBtn == GPIO_PIN_RESET)
+  {
+    /* Keep continuous flicker while hardware reset button is held down */
+    ledStatusActivityPulse();
+  }
   (void)s_cliLine;
   (void)s_cliPos;
   (void)processCliCommand;

@@ -36,6 +36,7 @@ static const char kFwVerStr[]   = "1.10";
 
 static uint8_t  s_debugPort = DAP_PORT_DISABLED;
 static bool     s_hostTargetConnected = false;
+static bool     s_hostDebugActive     = false;
 static uint32_t s_matchMask = 0x00000000UL;
 static uint8_t  s_hidClassId = 0U;
 
@@ -169,18 +170,37 @@ static uint32_t dapHostStatus(const uint8_t *req, uint8_t *resp)
   {
     /* Type 0: Connect LED - Connected (Double blink) or Idle (Single blink) */
     s_hostTargetConnected = (status != 0U);
-    ledStatusSetState(s_hostTargetConnected ? LED_STATE_CONNECTED : LED_STATE_IDLE);
+    if (!s_hostTargetConnected)
+    {
+      s_hostDebugActive = false;
+    }
+    ledStatusClearError();
+    ledStatusSetState(s_hostDebugActive ? LED_STATE_DEBUG
+                                        : (s_hostTargetConnected ? LED_STATE_CONNECTED : LED_STATE_IDLE));
   }
   else if (type == 1U)
   {
-    /* Type 1: Flashing / Erasing / Verifying busy (Nháy liên tục đến khi xong) */
-    ledStatusSetState((status != 0U) ? LED_STATE_BUSY_FLASHING : (s_hostTargetConnected ? LED_STATE_CONNECTED : LED_STATE_IDLE));
+    /* Type 1: Flashing / Erasing / Verifying / Target busy action (không phải debug -> nháy liên tục đến khi xong) */
+    if (status != 0U)
+    {
+      if (!s_hostDebugActive)
+      {
+        ledStatusSetState(LED_STATE_BUSY_FLASHING);
+      }
+    }
+    else
+    {
+      ledStatusSetState(s_hostDebugActive ? LED_STATE_DEBUG
+                                          : (s_hostTargetConnected ? LED_STATE_CONNECTED : LED_STATE_IDLE));
+    }
   }
   else if (type == 2U)
   {
     /* Type 2: Debug Mode */
     if (status == 1U)
     {
+      s_hostDebugActive = true;
+      ledStatusClearError();
       ledStatusSetState(LED_STATE_DEBUG); /* Sáng liên tục */
     }
     else if (status == 2U)
@@ -189,6 +209,7 @@ static uint32_t dapHostStatus(const uint8_t *req, uint8_t *resp)
     }
     else
     {
+      s_hostDebugActive = false;
       ledStatusSetState(s_hostTargetConnected ? LED_STATE_CONNECTED : LED_STATE_IDLE);
     }
   }
@@ -208,7 +229,7 @@ static uint32_t dapConnect(const uint8_t *req, uint8_t *resp)
   {
     s_debugPort = DAP_PORT_SWD;
     swdInit();
-    if (ledStatusGetState() != LED_STATE_DEBUG && ledStatusGetState() != LED_STATE_BUSY_FLASHING)
+    if (!s_hostDebugActive && ledStatusGetState() != LED_STATE_BUSY_FLASHING)
     {
       ledStatusSetState(LED_STATE_CONNECTED);
     }
@@ -225,7 +246,7 @@ static uint32_t dapDisconnect(uint8_t *resp)
 {
   s_debugPort = DAP_PORT_DISABLED;
   swdRelease();
-  if (!s_hostTargetConnected && ledStatusGetState() != LED_STATE_DEBUG)
+  if (!s_hostTargetConnected && !s_hostDebugActive && ledStatusGetState() != LED_STATE_BUSY_FLASHING)
   {
     ledStatusSetState(LED_STATE_IDLE);
   }
@@ -835,8 +856,10 @@ void DAP_Init(void)
 {
   swdTimeInit();
   swdRelease();
-  s_debugPort  = DAP_PORT_DISABLED;
-  s_rxWriteIdx = 0U;
+  s_debugPort           = DAP_PORT_DISABLED;
+  s_hostTargetConnected = false;
+  s_hostDebugActive     = false;
+  s_rxWriteIdx          = 0U;
   s_rxReadIdx  = 0U;
   s_rxCount    = 0U;
   s_rxPaused   = false;

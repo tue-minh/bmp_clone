@@ -52,6 +52,11 @@ void ledStatusActivityPulse(void);
 void ledStatusSetErrorTemporary(uint32_t durationMs);
 
 /**
+ * @brief Xóa trạng thái lỗi tạm thời ngay lập tức
+ */
+void ledStatusClearError(void);
+
+/**
  * @brief Hàm cập nhật LED State Machine - non-blocking, gọi liên tục trong main while(1) loop
  */
 void ledStatusUpdate(void);

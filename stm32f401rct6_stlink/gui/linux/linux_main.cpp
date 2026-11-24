@@ -36,6 +36,21 @@
 #include "linux_backend.hpp"
 #include "logo_data.hpp"
 
+struct LinuxDapBusyGuard {
+    LinuxCmsisDap& dap;
+    bool active;
+    LinuxDapBusyGuard(LinuxCmsisDap& d, bool skip) : dap(d), active(!skip) {
+        if (active) {
+            try { dap.hostStatus(1, 1); } catch (...) {}
+        }
+    }
+    ~LinuxDapBusyGuard() {
+        if (active) {
+            try { dap.hostStatus(1, 0); } catch (...) {}
+        }
+    }
+};
+
 struct SpeedOpt { const char* label; uint32_t hz; };
 static const SpeedOpt kSwdSpeeds[] = {
     {"4 MHz",   4000000},
@@ -497,7 +512,15 @@ int main(int argc, char* argv[]) {
             LinuxHidDevice hid; std::string err;
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
-            try { dap.hostStatus(1, 1); } catch (...) {}
+            if (debugActive) {
+                try { dap.hostStatus(2, 0); } catch (...) {}
+                QMetaObject::invokeMethod(winPtr, [&]() {
+                    debugActive = false;
+                    dText->setPlainText("Debug Session: Inactive (Flash operation started).");
+                    updateButtons();
+                }, Qt::QueuedConnection);
+            }
+            LinuxDapBusyGuard busy(dap, false);
             auto info = dap.flashImage(img.baseAddr, img.data, speed, underReset, true,
                 [&](const std::string& st, uint32_t done, uint32_t tot) {
                     int pct = tot ? (st == "erase" ? 15 * done / tot : st == "program" ? 15 + 65 * done / tot : 80 + 20 * done / tot) : 0;
@@ -522,7 +545,7 @@ int main(int argc, char* argv[]) {
             LinuxHidDevice hid; std::string err;
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
-            try { dap.hostStatus(1, 1); } catch (...) {}
+            LinuxDapBusyGuard busy(dap, false);
             auto res = dap.verifyImage(img.baseAddr, img.data, speed, underReset,
                 [&](const std::string&, uint32_t d, uint32_t t) {
                     int pct = t ? static_cast<int>(100 * d / t) : 100;
@@ -536,14 +559,14 @@ int main(int argc, char* argv[]) {
 
     QObject::connect(btnHwReset, &QPushButton::clicked, [&]() {
         bool ocd = chkUseOcd->isChecked();
-        runBg([&, ocd]() {
+        bool dbg = debugActive;
+        runBg([&, ocd, dbg]() {
             if (ocd) { runOcdSync({"init", "reset run", "exit"}); return; }
             LinuxHidDevice hid; std::string err;
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
-            try { dap.hostStatus(1, 1); } catch (...) {}
+            LinuxDapBusyGuard busy(dap, dbg);
             dap.hardResetPulse(50);
-            try { dap.hostStatus(0, 1); } catch (...) {}
             postLog("[HW RESET] Asserted nRESET pin (PB8) LOW 50ms -> HIGH.");
         });
     });
@@ -551,14 +574,18 @@ int main(int argc, char* argv[]) {
     QObject::connect(btnSwdReset, &QPushButton::clicked, [&]() {
         uint32_t speed = cmbSpeed->currentData().toUInt();
         bool ocd = chkUseOcd->isChecked();
-        runBg([&, speed, ocd]() {
+        bool dbg = debugActive;
+        bool conn = targetConnected;
+        runBg([&, speed, ocd, dbg, conn]() {
             if (ocd) { runOcdSync({"init", "reset_config none", "reset run", "exit"}); return; }
             LinuxHidDevice hid; std::string err;
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
-            try { dap.hostStatus(1, 1); } catch (...) {}
+            LinuxDapBusyGuard busy(dap, dbg);
             dap.swdSystemReset(speed);
-            try { dap.hostStatus(0, 1); } catch (...) {}
+            if (conn && !dbg) {
+                try { dap.hostStatus(0, 1); } catch (...) {}
+            }
             postLog("[SWD RESET] Sent AIRCR.SYSRESETREQ over SWD.");
         });
     });
@@ -573,7 +600,15 @@ int main(int argc, char* argv[]) {
             LinuxHidDevice hid; std::string err;
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
-            try { dap.hostStatus(1, 1); } catch (...) {}
+            if (debugActive) {
+                try { dap.hostStatus(2, 0); } catch (...) {}
+                QMetaObject::invokeMethod(winPtr, [&]() {
+                    debugActive = false;
+                    dText->setPlainText("Debug Session: Inactive (Mass Erase started).");
+                    updateButtons();
+                }, Qt::QueuedConnection);
+            }
+            LinuxDapBusyGuard busy(dap, false);
             auto info = dap.massErase(speed, underReset);
             postLog("[OK] Mass Erase completed on " + QString::fromStdString(info.name));
             auto refreshed = dap.probeTarget(speed, false, true);
@@ -651,6 +686,7 @@ int main(int argc, char* argv[]) {
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
             QString txt = formatDebugText(dap.readCpuStatus(speed, ur));
+            try { dap.hostStatus(2, 2); } catch (...) {}
             QMetaObject::invokeMethod(winPtr, [&, txt]() { dText->setPlainText(txt); }, Qt::QueuedConnection);
         });
     });
@@ -690,10 +726,12 @@ int main(int argc, char* argv[]) {
             uint32_t len = std::min(parseHexOrDec(hLen->text(), 512), uint32_t(16384));
             uint32_t speed = cmbSpeed->currentData().toUInt();
             bool ur = chkUnderReset->isChecked();
-            runBg([&, addr, len, speed, ur, hOut]() {
+            bool dbg = debugActive;
+            runBg([&, addr, len, speed, ur, dbg, hOut]() {
                 LinuxHidDevice hid; std::string err;
                 if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
                 LinuxCmsisDap dap(hid);
+                LinuxDapBusyGuard busy(dap, dbg);
                 auto data = dap.readMemoryBytes(addr, len, speed, ur);
                 QString txt = formatHexDump(addr, data);
                 QMetaObject::invokeMethod(hOut, [hOut, txt]() { hOut->setPlainText(txt); }, Qt::QueuedConnection);
@@ -703,10 +741,12 @@ int main(int argc, char* argv[]) {
             uint32_t addr = parseHexOrDec(mAddr->text(), 0xE0042000);
             uint32_t speed = cmbSpeed->currentData().toUInt();
             bool ur = chkUnderReset->isChecked();
-            runBg([&, addr, speed, ur, mVal]() {
+            bool dbg = debugActive;
+            runBg([&, addr, speed, ur, dbg, mVal]() {
                 LinuxHidDevice hid; std::string err;
                 if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
                 LinuxCmsisDap dap(hid);
+                LinuxDapBusyGuard busy(dap, dbg);
                 auto d = dap.readMemoryBytes(addr, 4, speed, ur);
                 uint32_t v = d[0] | (d[1] << 8) | (d[2] << 16) | (d[3] << 24);
                 QString vs = QString("0x%1").arg(v, 8, 16, QChar('0')).toUpper();
@@ -717,11 +757,12 @@ int main(int argc, char* argv[]) {
             uint32_t addr = parseHexOrDec(mAddr->text(), 0xE0042000);
             uint32_t val  = parseHexOrDec(mVal->text(), 0);
             uint32_t speed = cmbSpeed->currentData().toUInt();
-            runBg([&, addr, val, speed]() {
+            bool dbg = debugActive;
+            runBg([&, addr, val, speed, dbg]() {
                 LinuxHidDevice hid; std::string err;
                 if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
                 LinuxCmsisDap dap(hid);
-                try { dap.hostStatus(1, 1); } catch (...) {}
+                LinuxDapBusyGuard busy(dap, dbg);
                 if (dap.connectSwd() != 1) throw std::runtime_error("DAP_Connect failed");
                 dap.swjClock(speed); dap.transferConfigure(2, 500, 0); dap.swdConfigure(0);
                 dap.swdLineResetToSwd(); dap.readDp(0); dap.writeAbort(0x1E); dap.writeDp(8, 0); dap.writeDp(4, 0x50000000);
@@ -730,7 +771,6 @@ int main(int argc, char* argv[]) {
                 dap.transfer({{0x01, 0x23000012}}, c, a, v);
                 dap.memWrite32(addr, val);
                 dap.disconnect();
-                try { dap.hostStatus(0, 1); } catch (...) {}
                 postLog(QString("[MEM32] Wrote [0x%1] = 0x%2").arg(addr, 8, 16, QChar('0')).arg(val, 8, 16, QChar('0')));
             });
         });
@@ -836,11 +876,12 @@ int main(int argc, char* argv[]) {
         if (outP.isEmpty()) return;
         uint32_t speed = cmbSpeed->currentData().toUInt();
         bool ur = chkUnderReset->isChecked();
-        runBg([&, outP, speed, ur]() {
+        bool dbg = debugActive;
+        runBg([&, outP, speed, ur, dbg]() {
             LinuxHidDevice hid; std::string err;
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
-            try { dap.hostStatus(1, 1); } catch (...) {}
+            LinuxDapBusyGuard busy(dap, dbg);
             auto info = dap.probeTarget(speed, ur, false);
             uint32_t len = info.flashKB ? info.flashKB * 1024U : 65536U;
             auto bytes = dap.readMemoryBytes(0x08000000, len, speed, ur,
@@ -850,7 +891,7 @@ int main(int argc, char* argv[]) {
                 });
             std::ofstream f(outP.toStdString(), std::ios::binary);
             f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-            try { dap.hostStatus(0, 1); } catch (...) {}
+            if (!dbg) { try { dap.hostStatus(0, 1); } catch (...) {} }
             postLog(QString("[OK] Saved Flash dump (%1 bytes).").arg(bytes.size()));
         });
     });
@@ -884,10 +925,10 @@ int main(int argc, char* argv[]) {
             "Probe LED (PC13) Status Legend:\n\n"
             "• Single Blink (1.0s cycle): Idle / Standby (Not connected)\n"
             "• Double Blink (1.2s cycle): Target SWD Connected\n"
-            "• Solid ON: Debug Mode Active (Halted / Attached)\n"
-            "• 3 Rapid Pulses: Debug Command Execution (Step/Halt/Run/Regs)\n"
-            "• Rapid Continuous Flicker (16.7 Hz): Flashing / Erasing / Verifying\n"
-            "• 3 Fast Blinks: SWD Error / Verify Mismatch\n\n"
+            "• Solid ON: Debug Mode Active\n"
+            "• 3 Continuous Blinks: Debug Command Executed (Step / Halt / Run / Regs)\n"
+            "• Rapid Continuous Flicker (12.5 Hz): Active Target Task (Flash / Verify / Erase / Reset / Memory)\n"
+            "• 3 Fast Blinks (Error): SWD Error / Verify Mismatch\n\n"
             "On-board Button (PA0): Hardware reset button (pulls nRESET / PB8 LOW).");
     });
     QObject::connect(mHelp->addAction("About"), &QAction::triggered, [&]() {
@@ -895,6 +936,18 @@ int main(int argc, char* argv[]) {
             "TUE CMSIS-DAP Native C++ Programmer v1.0.0 (Ubuntu)\n"
             "Direct USB HID (/dev/hidraw*) + Virtual COM (/dev/ttyACM*)\n"
             "Supports direct SWD flashing (F1/F3/F4/G4/L4) without OpenOCD.");
+    });
+
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, [&]() {
+        if ((targetConnected || debugActive) && !chkUseOcd->isChecked() && probePresent) {
+            try {
+                LinuxHidDevice hid; std::string err;
+                if (hid.open(getSelectedHid(), err)) {
+                    LinuxCmsisDap dap(hid);
+                    dap.hostStatus(0, 0);
+                }
+            } catch (...) {}
+        }
     });
 
     postLog("[READY] TUE CMSIS-DAP Native C++ GUI v1.0.0 ready. USB plug-and-play active.");

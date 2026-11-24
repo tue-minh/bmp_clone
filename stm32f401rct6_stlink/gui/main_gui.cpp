@@ -190,6 +190,21 @@ static void postLog(const std::string& msg) {
     }
 }
 
+struct DapBusyGuard {
+    CmsisDapClient& dap;
+    bool active;
+    DapBusyGuard(CmsisDapClient& d, bool skip) : dap(d), active(!skip) {
+        if (active) {
+            try { dap.hostStatus(1, 1); } catch (...) {}
+        }
+    }
+    ~DapBusyGuard() {
+        if (active) {
+            try { dap.hostStatus(1, 0); } catch (...) {}
+        }
+    }
+};
+
 static void appendEditText(HWND hEdit, const std::wstring& text) {
     if (!hEdit) return;
     int len = GetWindowTextLengthW(hEdit);
@@ -540,7 +555,12 @@ static void doFlash() {
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
 
         CmsisDapClient dap(hid);
-        try { dap.hostStatus(1, true); } catch (...) {}
+        if (g_debugActive) {
+            try { dap.hostStatus(2, 0); } catch (...) {}
+            auto* dbgTxt = new std::wstring(L"Debug Session: Inactive (Flash operation started).");
+            PostMessageW(g_hMainWnd, WM_APP_DEBUG_INFO, 2, reinterpret_cast<LPARAM>(dbgTxt));
+        }
+        DapBusyGuard busy(dap, false);
         ULONGLONG t0 = GetTickCount64();
         Stm32TargetInfo info = dap.flashImage(
             img.baseAddr, img.data, speed, underReset, true,
@@ -584,7 +604,7 @@ static void doVerify() {
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
 
         CmsisDapClient dap(hid);
-        try { dap.hostStatus(1, true); } catch (...) {}
+        DapBusyGuard busy(dap, false);
         auto res = dap.verifyImage(img.baseAddr, img.data, speed, underReset,
                                    [](const std::string&, uint32_t done, uint32_t total) {
                                        int pct = total ? static_cast<int>(100 * done / total) : 100;
@@ -605,6 +625,7 @@ static void doVerify() {
 static void doHwReset() {
     uint32_t speed = getSwdSpeedHz();
     bool ocd = useOpenOcd();
+    bool dbg = g_debugActive;
     std::wstring ocdExe = g_ocdExePath;
     std::wstring ocdCfg = getSelectedOcdTargetCfg();
 
@@ -620,9 +641,8 @@ static void doHwReset() {
         std::string err;
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
         CmsisDapClient dap(hid);
-        try { dap.hostStatus(1, true); } catch (...) {}
+        DapBusyGuard busy(dap, dbg);
         dap.hardResetPulse(50);
-        try { dap.hostStatus(0, true); } catch (...) {}
         postLog("[HW RESET] Asserted nRESET pin (PB8) LOW 50ms -> HIGH.");
     });
 }
@@ -630,6 +650,8 @@ static void doHwReset() {
 static void doSwdReset() {
     uint32_t speed = getSwdSpeedHz();
     bool ocd = useOpenOcd();
+    bool dbg = g_debugActive;
+    bool conn = g_targetConnected;
     std::wstring ocdExe = g_ocdExePath;
     std::wstring ocdCfg = getSelectedOcdTargetCfg();
 
@@ -645,9 +667,11 @@ static void doSwdReset() {
         std::string err;
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
         CmsisDapClient dap(hid);
-        try { dap.hostStatus(1, true); } catch (...) {}
+        DapBusyGuard busy(dap, dbg);
         dap.swdSystemReset(speed);
-        try { dap.hostStatus(0, true); } catch (...) {}
+        if (conn && !dbg) {
+            try { dap.hostStatus(0, true); } catch (...) {}
+        }
         postLog("[SWD RESET] Sent AIRCR.SYSRESETREQ over SWD.");
     });
 }
@@ -676,7 +700,12 @@ static void doErase() {
         std::string err;
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
         CmsisDapClient dap(hid);
-        try { dap.hostStatus(1, true); } catch (...) {}
+        if (g_debugActive) {
+            try { dap.hostStatus(2, 0); } catch (...) {}
+            auto* dbgTxt = new std::wstring(L"Debug Session: Inactive (Mass Erase started).");
+            PostMessageW(g_hMainWnd, WM_APP_DEBUG_INFO, 2, reinterpret_cast<LPARAM>(dbgTxt));
+        }
+        DapBusyGuard busy(dap, false);
         postLog("[ERASE] Erasing target Flash...");
         Stm32TargetInfo info = dap.massErase(speed, underReset);
         postLog("[OK] Mass Erase completed on " + info.name);
@@ -809,6 +838,7 @@ static void doDumpFlashBin() {
     std::wstring outPath = fileBuf;
     uint32_t speed = getSwdSpeedHz();
     bool underReset = useUnderReset();
+    bool dbg = g_debugActive;
 
     runBgTask([=]() {
         HidDeviceInfo devInfo = getSelectedHidInfo();
@@ -816,7 +846,7 @@ static void doDumpFlashBin() {
         std::string err;
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
         CmsisDapClient dap(hid);
-        try { dap.hostStatus(1, true); } catch (...) {}
+        DapBusyGuard busy(dap, dbg);
         Stm32TargetInfo info = dap.probeTarget(speed, underReset, false);
         uint32_t len = (info.flashKB > 0) ? (info.flashKB * 1024U) : (64U * 1024U);
         postLog("[DUMP] Reading " + std::to_string(len / 1024) + " KB Flash from " + info.name + "...");
@@ -827,7 +857,7 @@ static void doDumpFlashBin() {
                                          });
         std::ofstream f(outPath.c_str(), std::ios::binary);
         f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-        try { dap.hostStatus(0, true); } catch (...) {}
+        if (!dbg) { try { dap.hostStatus(0, true); } catch (...) {} }
         postLog("[OK] Saved Flash dump (" + std::to_string(bytes.size()) + " bytes).");
     });
 }
@@ -944,12 +974,14 @@ static LRESULT CALLBACK HexWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             uint32_t len = (std::min)(parseHexOrDec(getWinText(g_hexLen), 512), uint32_t(16384));
             uint32_t speed = getSwdSpeedHz();
             bool underReset = useUnderReset();
+            bool dbg = g_debugActive;
             runBgTask([=]() {
                 HidDeviceInfo devInfo = getSelectedHidInfo();
                 WinHidDevice hid;
                 std::string err;
                 if (!hid.open(devInfo, err)) throw std::runtime_error(err);
                 CmsisDapClient dap(hid);
+                DapBusyGuard busy(dap, dbg);
                 auto data = dap.readMemoryBytes(addr, len, speed, underReset);
                 auto* txt = new std::wstring(formatHexDump(addr, data));
                 PostMessageW(g_hMainWnd, WM_APP_HEX_DATA, 0, reinterpret_cast<LPARAM>(txt));
@@ -958,12 +990,14 @@ static LRESULT CALLBACK HexWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             uint32_t addr = parseHexOrDec(getWinText(g_m32Addr), 0xE0042000);
             uint32_t speed = getSwdSpeedHz();
             bool underReset = useUnderReset();
+            bool dbg = g_debugActive;
             runBgTask([=]() {
                 HidDeviceInfo devInfo = getSelectedHidInfo();
                 WinHidDevice hid;
                 std::string err;
                 if (!hid.open(devInfo, err)) throw std::runtime_error(err);
                 CmsisDapClient dap(hid);
+                DapBusyGuard busy(dap, dbg);
                 auto data = dap.readMemoryBytes(addr, 4, speed, underReset);
                 uint32_t val = data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24);
                 PostMessageW(g_hMainWnd, WM_APP_MEM32_VAL, val, 0);
@@ -972,13 +1006,14 @@ static LRESULT CALLBACK HexWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             uint32_t addr = parseHexOrDec(getWinText(g_m32Addr), 0xE0042000);
             uint32_t val  = parseHexOrDec(getWinText(g_m32Val), 0);
             uint32_t speed = getSwdSpeedHz();
+            bool dbg = g_debugActive;
             runBgTask([=]() {
                 HidDeviceInfo devInfo = getSelectedHidInfo();
                 WinHidDevice hid;
                 std::string err;
                 if (!hid.open(devInfo, err)) throw std::runtime_error(err);
                 CmsisDapClient dap(hid);
-                try { dap.hostStatus(1, true); } catch (...) {}
+                DapBusyGuard busy(dap, dbg);
                 if (dap.connectSwd() != 1) throw std::runtime_error("DAP_Connect failed");
                 dap.swjClock(speed);
                 dap.transferConfigure(2, 500, 0);
@@ -997,7 +1032,6 @@ static LRESULT CALLBACK HexWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 dap.transfer({{0x01, 0x23000012}}, c, a, v);
                 dap.memWrite32(addr, val);
                 dap.disconnect();
-                try { dap.hostStatus(0, true); } catch (...) {}
                 char msg[96];
                 std::snprintf(msg, sizeof(msg), "[MEM32] Wrote [0x%08X] = 0x%08X", addr, val);
                 postLog(msg);
@@ -1494,10 +1528,10 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                         L"Probe LED (PC13) Status Legend:\n\n"
                         L"• Single Blink (1.0s cycle): Idle / Standby (Not connected)\n"
                         L"• Double Blink (1.2s cycle): Target SWD Connected\n"
-                        L"• Solid ON: Debug Mode Active (Halted / Attached)\n"
-                        L"• 3 Rapid Pulses: Debug Command Execution (Step/Halt/Run/Regs)\n"
-                        L"• Rapid Continuous Flicker (16.7 Hz): Flashing / Erasing / Verifying\n"
-                        L"• 3 Fast Blinks: SWD Error / Verify Mismatch\n\n"
+                        L"• Solid ON: Debug Mode Active\n"
+                        L"• 3 Continuous Blinks: Debug Command Executed (Step / Halt / Run / Regs)\n"
+                        L"• Rapid Continuous Flicker (12.5 Hz): Active Target Task (Flash / Verify / Erase / Reset / Memory)\n"
+                        L"• 3 Fast Blinks (Error): SWD Error / Verify Mismatch\n\n"
                         L"On-board Button (PA0): Hardware reset button (pulls nRESET / PB8 LOW).",
                         L"LED Status Legend", MB_ICONINFORMATION);
             break;
@@ -1579,6 +1613,17 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         return 0;
 
     case WM_DESTROY:
+        if ((g_targetConnected || g_debugActive) && !useOpenOcd() && g_probePresent) {
+            try {
+                HidDeviceInfo devInfo = getSelectedHidInfo();
+                WinHidDevice hid;
+                std::string err;
+                if (hid.open(devInfo, err)) {
+                    CmsisDapClient dap(hid);
+                    dap.hostStatus(0, 0);
+                }
+            } catch (...) {}
+        }
         g_serial.close();
         g_ocdRunner.stopGdbServer();
         if (g_hDevNotifyHid) UnregisterDeviceNotification(g_hDevNotifyHid);

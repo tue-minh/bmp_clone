@@ -153,49 +153,24 @@ Khi chưa mở phiên debug trên PC, bạn có thể dùng Terminal (`115200 8N
 
 ## 7. Ứng dụng GUI Native C++ Siêu Nhẹ (Windows & Ubuntu)
 
-Phiên bản giao diện nhân **C++17 thuần** (khởi chạy tức thì, dung lượng ~1.27 MB trên Windows và ~223 KB trên Ubuntu):
+Ứng dụng giao diện nhân **C++17 thuần** được đặt tại thư mục `../gui/` (cùng cấp với thư mục `firmware/`):
 
 * **Windows (`Win32 API`):**
-  * Chạy trực tiếp file độc lập: [gui_cpp/build/TUE_CMSIS_DAP_CPP.exe](gui_cpp/build/TUE_CMSIS_DAP_CPP.exe)
-  * Tự biên dịch lại bằng MinGW-w64: `powershell -ExecutionPolicy Bypass -File gui_cpp\build.ps1`
+  * Chạy trực tiếp file độc lập: [../gui/build/TUE_CMSIS_DAP_CPP.exe](../gui/build/TUE_CMSIS_DAP_CPP.exe)
+  * Tự biên dịch lại bằng MinGW-w64: `powershell -ExecutionPolicy Bypass -File ..\gui\build.ps1`
 * **Ubuntu / Linux (`Qt5Widgets`):**
-  * Cài đặt bằng gói `.deb` (tự động cài shortcut & `udev rules`):
+  * Cài đặt bằng gói `.deb` (tự động cài icon logo, shortcut & `udev rules`):
     ```bash
-    sudo apt install ./gui_cpp/dist/ubuntu/tue-cmsis-dap_2.1.0_amd64.deb
+    sudo apt install ../gui/dist/ubuntu/tue-cmsis-dap_2.1.0_amd64.deb
     tue-cmsis-dap
     ```
-  * Hoặc chạy file binary trực tiếp: [gui_cpp/dist/ubuntu/tue-cmsis-dap-ubuntu-x86_64](gui_cpp/dist/ubuntu/tue-cmsis-dap-ubuntu-x86_64)
-  * Tự biên dịch & đóng gói `.deb`: `./gui_cpp/linux/build_ubuntu_deb.sh`
+  * Hoặc chạy file binary trực tiếp: [../gui/dist/ubuntu/tue-cmsis-dap-ubuntu-x86_64](../gui/dist/ubuntu/tue-cmsis-dap-ubuntu-x86_64)
+  * Tự biên dịch & đóng gói `.deb`: `../gui/linux/build_ubuntu_deb.sh`
 
-**Tính năng nổi bật của bản C++:**
+**Tính năng nổi bật:**
 * **Plug & Play:** Tự động nhận thiết bị USB HID & Virtual COM ngay khi cắm/rút (không cần quét lại thủ công).
 * **Giao diện gọn gàng (Fixed 900×600, Tiếng Anh):** Các panel phụ (`Memory Hex Viewer & Mem32`, `UART Terminal`, `OpenOCD Settings`, `GDB Server`) được đưa lên thanh Menu; các phím chức năng nằm ngay trên cùng.
 * **Connect thông minh:** Khi nhấn **Connect**, tự động đọc tên chip, `DEV_ID`, `DP_IDCODE`, dung lượng Flash, `RDP`, `UID` và **256 bytes đầu tiên đang có trong Flash chip**, sau đó mở khóa các phím **Flash / Verify / Reset / Mass Erase / Halt / Run / Step / Read Regs**.
 * **9 mức tốc độ SWD** (`4 MHz` xuống `20 kHz`) và ô tick **`Use OpenOCD`**.
 * **UART Terminal nâng cao:** Hỗ trợ `Echo TX`, tự xóa ô nhập khi nhấn Enter/Send, và các ô tick gửi kèm `\r (CR)`, `\n (LF)`, `\t (TAB)`, `Parse \r \n \t \xHH`.
-
----
-
-## 8. Công cụ GUI Python (Bản thay thế) ([gui/tue_dap_gui.py](gui/tue_dap_gui.py))
-
-* **Chạy trực tiếp bản Windows `.exe` (không cần cài Python, không cần OpenOCD, không cần driver):**
-  Mở [gui/dist/windows/TUE_CMSIS_DAP.exe](gui/dist/windows/TUE_CMSIS_DAP.exe) (hoặc build lại bằng `gui/build_windows.ps1`).
-* **Trên Ubuntu / Linux:**
-  * Hỗ trợ sẵn kernel `hidraw` (`/dev/hidraw*`), không cần thư viện ngoài.
-  * Cài udev rule (để không cần `sudo`) và đóng gói thành app Ubuntu bằng script [gui/build_ubuntu.sh](gui/build_ubuntu.sh):
-    ```bash
-    cd firmware/gui
-    chmod +x build_ubuntu.sh
-    ./build_ubuntu.sh
-    ./dist/TUE_CMSIS_DAP
-    ```
-* **Hoặc chạy thẳng bằng Python:**
-  ```powershell
-  python gui\tue_dap_gui.py
-  ```
-
-GUI hỗ trợ 3 tab:
-* **Nạp Code & Probe Trực Tiếp (Không cần OpenOCD):** Quét thiết bị HID, đọc `DAP_Info`, bật/tắt LED `PC13`, kích xung Reset `PB8`, tự nhận diện chip đích (F1/F3/F4/G4/L4/F0/G0...) và **nạp/verify trực tiếp file `.bin`, `.hex`, `.elf` qua USB HID** cho STM32F1/F3/F4/G4/L4 (có thanh tiến trình & Connect-Under-Reset `PB8`).
-* **OpenOCD & GDB Debug Server (Tùy chọn):** Tích hợp sẵn `openocd.exe` để test kết nối, nạp `.bin`/`.elf`/`.hex` hoặc bật GDB Server (`:3333`).
-* **UART CLI:** Kết nối `USART1` (`115200`) để gửi nhanh lệnh `probe`, `link`, `reset`, `halt`, `run`.
 

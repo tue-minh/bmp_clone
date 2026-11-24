@@ -5,6 +5,7 @@
 #include <QFileDialog>
 #include <QFont>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMainWindow>
@@ -12,6 +13,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMetaObject>
+#include <QPixmap>
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QProgressBar>
@@ -32,6 +34,7 @@
 #include <vector>
 
 #include "linux_backend.hpp"
+#include "logo_data.hpp"
 
 struct SpeedOpt { const char* label; uint32_t hz; };
 static const SpeedOpt kSwdSpeeds[] = {
@@ -121,6 +124,10 @@ static std::string decodeEscapes(const std::string& in) {
 
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
+
+    QPixmap logoPix;
+    logoPix.loadFromData(kLogoPng, static_cast<uint>(kLogoPngLen), "PNG");
+    app.setWindowIcon(QIcon(logoPix));
 
     QMainWindow win;
     QMainWindow* winPtr = &win;

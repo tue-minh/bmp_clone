@@ -15,6 +15,7 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE/DEBIAN"
 mkdir -p "$STAGE/usr/local/bin"
 mkdir -p "$STAGE/usr/share/applications"
+mkdir -p "$STAGE/usr/share/icons/hicolor/256x256/apps"
 mkdir -p "$STAGE/etc/udev/rules.d"
 
 echo "[1/3] Compiling native C++ Qt5 binary..."
@@ -25,19 +26,20 @@ g++ -std=c++17 -O2 -s -fPIC -Wall -Wextra \
 
 cp "$STAGE/usr/local/bin/tue-cmsis-dap" "$OUT_DIR/tue-cmsis-dap-ubuntu-x86_64"
 
-echo "[2/3] Adding desktop shortcut and udev rules..."
+echo "[2/3] Adding desktop shortcut, icon, and udev rules..."
+cp "../MT_Logo.png" "$STAGE/usr/share/icons/hicolor/256x256/apps/tue-cmsis-dap.png"
 cat > "$STAGE/usr/share/applications/tue-cmsis-dap.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=TUE CMSIS-DAP Programmer
 Comment=Native C++ STM32 SWD Programmer & Debugger
 Exec=/usr/local/bin/tue-cmsis-dap
-Icon=utilities-terminal
+Icon=tue-cmsis-dap
 Terminal=false
 Categories=Development;Electronics;
 EOF
 
-cp "../../gui/99-tue-cmsis-dap.rules" "$STAGE/etc/udev/rules.d/99-tue-cmsis-dap.rules"
+cp "99-tue-cmsis-dap.rules" "$STAGE/etc/udev/rules.d/99-tue-cmsis-dap.rules"
 
 cat > "$STAGE/DEBIAN/control" <<EOF
 Package: ${PKG_NAME}

@@ -1443,7 +1443,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     wcMain.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wcMain.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
     wcMain.lpszClassName = L"TueDapMainClass";
-    wcMain.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    wcMain.hIcon = static_cast<HICON>(LoadImageW(
+        hInstance, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_SHARED));
+    wcMain.hIconSm = static_cast<HICON>(LoadImageW(
+        hInstance, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 16, 16, LR_SHARED));
     RegisterClassExW(&wcMain);
 
     WNDCLASSEXW wcHex = wcMain;

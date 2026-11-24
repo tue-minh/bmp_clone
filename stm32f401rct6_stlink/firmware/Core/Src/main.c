@@ -163,39 +163,28 @@ static void processCliCommand(char *cmd)
 static void serviceButtonAndCli(void)
 {
   /* PA0 (MCU_BUTTON, active LOW with internal pull-up):
-   * Industrial Button Action -> Target Hardware Reset & Link Probe */
+   * Direct Hardware Reset mirror -> PB8 (nRESET) stays LOW while button is held,
+   * and returns HIGH (3.3V) immediately upon release (non-blocking). */
   static uint8_t  lastBtn = GPIO_PIN_SET;
   static uint32_t lastDebounceMs = 0U;
   uint8_t rawBtn = (uint8_t)HAL_GPIO_ReadPin(MCU_BUTTON_GPIO_Port, MCU_BUTTON_Pin);
   uint32_t now = HAL_GetTick();
 
-  if (rawBtn != lastBtn && (now - lastDebounceMs) > 50U)
+  if (rawBtn != lastBtn && (now - lastDebounceMs) > 25U)
   {
     lastDebounceMs = now;
     lastBtn = rawBtn;
     if (rawBtn == GPIO_PIN_RESET)
     {
+      /* Button pressed -> assert nRESET LOW immediately and keep it LOW while held */
+      swdSetReset(true);
       ledStatusActivityPulse();
-      /* Kéo xung phần cứng nRESET qua PB8 */
-      swdHardResetPulse(60U, 30U);
-
-      if (!DAP_IsConnected())
-      {
-        uint32_t dpId = 0U;
-        if (stm32TargetCheckLink(&dpId))
-        {
-          printf("[BUTTON] Hardware Reset Target OK! DP_IDCODE=0x%08lX\r\n", (unsigned long)dpId);
-          ledStatusSetState(LED_STATE_CONNECTED);
-        }
-        else
-        {
-          printf("[BUTTON] Target Hardware Reset (nRST) pulse generated\r\n");
-        }
-      }
-      else
-      {
-        printf("[BUTTON] Target Hardware Reset pulse sent during active DAP session\r\n");
-      }
+    }
+    else
+    {
+      /* Button released -> release nRESET HIGH (3.3V) immediately */
+      swdSetReset(false);
+      ledStatusActivityPulse();
     }
   }
   (void)s_cliLine;

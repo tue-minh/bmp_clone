@@ -252,7 +252,13 @@ void swdRelease(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(MCU_SWDCLK_GPIO_Port, &GPIO_InitStruct);
 
+  /* Ensure PB8 (nRESET) stays Open-Drain with internal Pull-Up and released (HIGH) */
   RST_RELEASE();
+  GPIO_InitStruct.Pin   = MCU_SWDRESET_Pin;
+  GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_OD;
+  GPIO_InitStruct.Pull  = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(MCU_SWDRESET_GPIO_Port, &GPIO_InitStruct);
 }
 
 void swdSetReset(bool asserted)

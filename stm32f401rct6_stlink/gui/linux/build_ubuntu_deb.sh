@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-OUT_DIR="../dist/ubuntu"
+OUT_DIR="."
 PKG_NAME="tue-cmsis-dap"
 PKG_VER="1.0.0"
 ARCH="amd64"

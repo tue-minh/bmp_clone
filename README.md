@@ -11,10 +11,10 @@ This repository contains the KiCad hardware, firmware, and host software for two
 
 | Folder / File | Description |
 | :--- | :--- |
-| [`stm32f401rct6_stlink/`](stm32f401rct6_stlink/firmware/README.md) | STM32F401RCT6 probe project (KiCad PCB + CMSIS-DAP/VCP Firmware + C++ GUI + Release v1.0.0) |
-| [`stm32f401rct6_stlink/firmware/`](stm32f401rct6_stlink/firmware/README.md) | STM32F401RCT6 firmware source (USB Composite HID + CDC VCP, SWD, industrial status LED) |
-| [`stm32f401rct6_stlink/gui/`](stm32f401rct6_stlink/gui/main_gui.cpp) | Native C++17 GUI (Win32 API for Windows & Qt5 for Ubuntu) |
-| [`stm32f401rct6_stlink/release/v1.0.0/`](stm32f401rct6_stlink/release/v1.0.0/RELEASE_NOTES.md) | Prebuilt v1.0.0 Release binaries (STM32F401 `.bin`/`.hex`, Windows `.exe`, Ubuntu `.deb`) |
+| [`stm32f401rct6_stlink/`](stm32f401rct6_stlink/firmware/README.md) | STM32F401RCT6 probe project (KiCad PCB + CMSIS-DAP/VCP Firmware + C++ GUI) |
+| [`stm32f401rct6_stlink/firmware/`](stm32f401rct6_stlink/firmware/README.md) | STM32F401RCT6 firmware source & prebuilt `.bin`/`.hex` (`tue-cmsis-dap-stm32f401rct6.bin`) |
+| [`stm32f401rct6_stlink/gui/`](stm32f401rct6_stlink/gui/main_gui.cpp) | Native C++17 GUI for Windows (`TUE_CMSIS_DAP_CPP.exe`) |
+| [`stm32f401rct6_stlink/gui/linux/`](stm32f401rct6_stlink/gui/linux/linux_main.cpp) | Native C++17 Qt5 GUI & `.deb` package for Ubuntu (`tue-cmsis-dap_1.0.0_amd64.deb`) |
 | `blackmagic-firmware-v1.10.2/` | Black Magic Probe v1.10.2 firmware for STM32F103C8T6 |
 | `hardware/` & `Tue_BMP_Gerber/` | KiCad hardware design & Gerber files for the Bluepill BMP |
 
@@ -27,26 +27,27 @@ This repository contains the KiCad hardware, firmware, and host software for two
   * **Interface 0:** `CMSIS-DAP v1.10` HID (compatible with OpenOCD, pyOCD, Keil MDK, STM32CubeIDE, Probe-rs).
   * **Interface 1 & 2:** `USB Serial Device (VCP)` bridged directly to `USART1` (`PA9` TX / `PB7` RX).
 * **Industrial Status LED (`PC13`):**
-  * *Double Heartbeat (1.2s):* Idle / Ready.
-  * *Solid ON:* SWD / Target Connected.
-  * *Rapid Flicker (16.7 Hz):* Erasing / Flashing / Verifying.
-  * *Double Blink (1.0s):* Target CPU Halted (Debug).
-  * *Triple Rapid Blink:* SWD Error / Verify Mismatch.
+  * *Single Blink (1.0s):* Idle / Standby (not connected).
+  * *Double Blink (1.2s):* Target SWD Connected.
+  * *Solid ON:* Debug Mode active (blinks **3 times** cleanly when executing a debug command, then returns to Solid ON).
+  * *Rapid Continuous Flicker (12.5 Hz):* Active non-debug target operation (Flashing / Erasing / Verifying / Reset / Memory R/W) until completed.
+  * *3 Fast Blinks (Error):* SWD Error / Verify Mismatch.
 * **Hardware Reset Button (`PA0`):** Press and hold to pull `PB8` (`nRESET`) to `0V`; release to return to `3.3V` immediately (non-blocking).
 * **Lightweight Native C++17 GUI (`stm32f401rct6_stlink/gui/`):**
   * Automatic USB Plug & Play detection (HID + COM).
   * Direct `.bin`, `.hex`, and `.elf` flashing/verifying/mass-erasing for **STM32F1 / F3 / F4 / G4 / L4** without OpenOCD, or toggle **`Use OpenOCD`** + GDB Server (`:3333`).
-  * Clicking **Connect** reads the chip name, IDs, Flash size, RDP, UID, and the first 256 bytes of on-chip Flash.
+  * Clicking **Connect** reads the chip name, IDs, Flash size, RDP, UID, and the first 512 bytes of on-chip Flash; includes **Disconnect**, **HW Reset** / **SWD Reset**, and a dedicated **CPU Debug Window** (`Start Debug`, `Exit Debug`, `Halt`, `Run`, `Step Into`, `Step Out`, `Read Regs`).
   * 9 SWD clock speeds (`4 MHz` – `20 kHz`), **Memory Hex Viewer & Mem32**, and **UART Terminal** (`Echo TX`, auto-clear input, selectable `\r`, `\n`, `\t`, and `Parse \r \n \t \xHH`).
 
-### 📦 Quick Download & Install (Release v1.0.0)
-* **STM32F401RCT6 Firmware:** Flash `stm32f401rct6_stlink/release/v1.0.0/tue-cmsis-dap-stm32f401rct6-v1.0.0.bin` at `0x08000000` (via DFU or ST-Link).
-* **Windows:** Run `stm32f401rct6_stlink/release/v1.0.0/TUE_CMSIS_DAP_Windows_v1.0.0.exe` directly.
+### 📦 Quick Download & Install (Prebuilt Files in Folders)
+* **STM32F401RCT6 Firmware:** Flash `stm32f401rct6_stlink/firmware/tue-cmsis-dap-stm32f401rct6.bin` (or `.hex`) at `0x08000000` (via DFU or ST-Link).
+* **Windows:** Run `stm32f401rct6_stlink/gui/TUE_CMSIS_DAP_CPP.exe` directly.
 * **Ubuntu / Linux:**
   ```bash
-  sudo apt install ./stm32f401rct6_stlink/release/v1.0.0/tue-cmsis-dap_1.0.0_amd64.deb
+  sudo apt install ./stm32f401rct6_stlink/gui/linux/tue-cmsis-dap_1.0.0_amd64.deb
   tue-cmsis-dap
   ```
+  *(Or run the standalone binary `stm32f401rct6_stlink/gui/linux/tue-cmsis-dap-ubuntu-x86_64`)*
 * For detailed firmware & GUI build instructions, see [`stm32f401rct6_stlink/firmware/README.md`](stm32f401rct6_stlink/firmware/README.md).
 
 ---

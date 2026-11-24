@@ -78,14 +78,14 @@ firmware/
 
 | Trạng thái | Kiểu chớp LED | Ý nghĩa / Ứng dụng |
 | :--- | :--- | :--- |
-| **IDLE (Standby)** | **Heartbeat nhịp tim kép** (2 nhịp chớp ngắn mỗi 1.2s) | Mạch nạp hoạt động tốt, sẵn sàng nhận kết nối từ PC/Debugger. |
-| **CONNECTED** | **Sáng liên tục (Solid ON)** | Debugger PC (OpenOCD, Keil, GUI) đã mở phiên SWD hoặc target đã kết nối. |
-| **BUSY / FLASHING** | **Flicker cực nhanh (16.7 Hz, 30ms)** | Đang xóa chip, nạp flash binary, verify hoặc truyền gói SWD dày đặc. |
-| **DEBUG / HALTED** | **Double Blink (Nháy kép 1000ms)** | CPU target đang bị Halted / dừng ở Breakpoint trong phiên Debug. |
+| **IDLE (Chưa kết nối)** | **Blink đơn 1 lần** (100 ms Sáng / 900 ms Tắt, chu kỳ 1.0 s) | Mạch nạp chưa kết nối target, sẵn sàng nhận lệnh. |
+| **CONNECTED** | **Blink kép 2 lần (Double Blink)** (chu kỳ 1.2 s) | Đã kết nối tới một chip STM32 đích qua SWD. |
+| **DEBUG** | **Sáng liên tục (Solid ON)** | Đang trong phiên Debug; mỗi khi gửi lệnh debug (Step, Halt, Run, Read Regs) sẽ **nháy 3 lần liên tục** rồi sáng liên tục lại. |
+| **BUSY / FLASHING** | **Nháy liên tục nhanh (12.5 Hz, 40 ms)** | Đang nạp code, verify, xóa chip, reset hoặc đọc/ghi bộ nhớ trên chip đang kết nối (ngoài debug) cho tới khi hoàn thành. |
 | **ERROR** | **3 chớp dồn dập (Triple blink)** | Lỗi giao tiếp SWD, mất ACK, timeout hoặc Verify mismatch. |
 
 ### Chức năng Nút bấm trên mạch (`PA0` / `MCU_BUTTON`):
-* **Target Hardware Reset & Probe**: Khi nhấn nút `PA0`, mạch nạp sẽ kéo chân `PB8` (`nRESET`) xuống mức thấp để kích hoạt Hardware Reset target, đồng thời probe nhanh kết nối SWD và chớp xung LED báo hiệu.
+* **Target Hardware Reset (`PA0` → `PB8`)**: Khi nhấn giữ nút `PA0`, mạch nạp kéo chân `PB8` (`nRESET`) xuống `0V` (non-blocking) đồng thời nháy LED liên tục, thả nút sẽ trả chân reset về `3.3V` ngay lập tức.
 
 ---
 
@@ -156,15 +156,15 @@ Khi chưa mở phiên debug trên PC, bạn có thể dùng Terminal (`115200 8N
 Ứng dụng giao diện nhân **C++17 thuần** được đặt tại thư mục `../gui/` (cùng cấp với thư mục `firmware/`):
 
 * **Windows (`Win32 API`):**
-  * Chạy trực tiếp file độc lập: [../gui/build/TUE_CMSIS_DAP_CPP.exe](../gui/build/TUE_CMSIS_DAP_CPP.exe)
+  * Chạy trực tiếp file độc lập: [../gui/TUE_CMSIS_DAP_CPP.exe](../gui/TUE_CMSIS_DAP_CPP.exe)
   * Tự biên dịch lại bằng MinGW-w64: `powershell -ExecutionPolicy Bypass -File ..\gui\build.ps1`
 * **Ubuntu / Linux (`Qt5Widgets`):**
   * Cài đặt bằng gói `.deb` (tự động cài icon logo, shortcut & `udev rules`):
     ```bash
-    sudo apt install ../gui/dist/ubuntu/tue-cmsis-dap_1.0.0_amd64.deb
+    sudo apt install ../gui/linux/tue-cmsis-dap_1.0.0_amd64.deb
     tue-cmsis-dap
     ```
-  * Hoặc chạy file binary trực tiếp: [../gui/dist/ubuntu/tue-cmsis-dap-ubuntu-x86_64](../gui/dist/ubuntu/tue-cmsis-dap-ubuntu-x86_64)
+  * Hoặc chạy file binary trực tiếp: [../gui/linux/tue-cmsis-dap-ubuntu-x86_64](../gui/linux/tue-cmsis-dap-ubuntu-x86_64)
   * Tự biên dịch & đóng gói `.deb`: `../gui/linux/build_ubuntu_deb.sh`
 
 **Tính năng nổi bật:**

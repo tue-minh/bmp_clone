@@ -15,7 +15,7 @@ if (-not (Test-Path $gpp)) {
 & $windres app.rc -O coff -o build/app_res.o
 & $gpp -std=c++17 -O2 -s -Wall -Wextra -DUNICODE -D_UNICODE -municode -mwindows -static `
     main_gui.cpp hid_device.cpp firmware_loader.cpp cmsis_dap.cpp serial_port.cpp openocd_runner.cpp build/app_res.o `
-    -o build/TUE_CMSIS_DAP_CPP.exe `
+    -o TUE_CMSIS_DAP_CPP.exe `
     -lcomctl32 -lhid -lsetupapi -lcomdlg32 -lgdi32 -luser32 -luuid
 
-Get-Item build/TUE_CMSIS_DAP_CPP.exe | Select-Object Name, Length, LastWriteTime
+Get-Item TUE_CMSIS_DAP_CPP.exe | Select-Object Name, Length, LastWriteTime

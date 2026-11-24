@@ -135,14 +135,15 @@ void swdSetAbortFlag(bool abort) { s_abortFlag = abort; }
 bool swdGetAbortFlag(void)       { return s_abortFlag; }
 
 /* -------------------------------------------------------------------------- */
-/* Low-level Bit-bang Primitives (ADIv5 B4.2)                                 */
+/* Low-level Bit-bang Primitives (ARM CMSIS-DAP / ADIv5.2 Compliant)         */
+/* SWCLK idle state is HIGH. Target samples on rising edge, drives on fall.  */
 /* -------------------------------------------------------------------------- */
 
-static inline void clockPulse(void)
+static inline void clockCycle(void)
 {
-  CLK_HIGH();
-  swdDelay();
   CLK_LOW();
+  swdDelay();
+  CLK_HIGH();
   swdDelay();
 }
 
@@ -156,14 +157,19 @@ static inline void writeBit(uint32_t bit)
   {
     DIO_LOW();
   }
+  CLK_LOW();
   swdDelay();
-  clockPulse();
+  CLK_HIGH();
+  swdDelay();
 }
 
 static inline uint32_t readBit(void)
 {
+  CLK_LOW();
+  swdDelay();
   uint32_t bit = DIO_READ();
-  clockPulse();
+  CLK_HIGH();
+  swdDelay();
   return bit;
 }
 
@@ -189,7 +195,7 @@ static void turnaroundCycles(uint8_t n)
 {
   for (uint8_t i = 0U; i < n; i++)
   {
-    clockPulse();
+    clockCycle();
   }
 }
 
@@ -199,7 +205,7 @@ static void idleCycles(uint8_t n)
   DIO_LOW();
   for (uint8_t i = 0U; i < n; i++)
   {
-    clockPulse();
+    clockCycle();
   }
 }
 
@@ -224,7 +230,7 @@ void swdInit(void)
   /* PB4: SWCLK Output Push-Pull, Very High Speed */
   GPIO_InitStruct.Pin   = MCU_SWDCLK_Pin;
   GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull  = GPIO_NOPULL;
+  GPIO_InitStruct.Pull  = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(MCU_SWDCLK_GPIO_Port, &GPIO_InitStruct);
 
@@ -236,7 +242,7 @@ void swdInit(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(MCU_SWDRESET_GPIO_Port, &GPIO_InitStruct);
 
-  CLK_LOW();
+  CLK_HIGH();  /* ARM standard: SWCLK idle state is HIGH */
   DIO_HIGH();
   DIO_DRIVE();
   s_lastError = 0;
@@ -249,7 +255,7 @@ void swdRelease(void)
   GPIO_InitTypeDef GPIO_InitStruct = {0};
   GPIO_InitStruct.Pin  = MCU_SWDCLK_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(MCU_SWDCLK_GPIO_Port, &GPIO_InitStruct);
 
   /* Ensure PB8 (nRESET) stays Open-Drain with internal Pull-Up and released (HIGH) */
@@ -449,7 +455,7 @@ static uint8_t rawTransferOnce(uint8_t reqPacket, uint32_t *data)
     {
       for (int i = 0; i < 33; i++)
       {
-        clockPulse();
+        clockCycle();
       }
     }
     turnaroundCycles(s_turnaround);
@@ -459,7 +465,7 @@ static uint8_t rawTransferOnce(uint8_t reqPacket, uint32_t *data)
       DIO_LOW();
       for (int i = 0; i < 33; i++)
       {
-        clockPulse();
+        clockCycle();
       }
     }
     DIO_LOW();
@@ -470,7 +476,7 @@ static uint8_t rawTransferOnce(uint8_t reqPacket, uint32_t *data)
   /* Protocol error / No ACK: back off data phase + turnaround */
   for (uint8_t i = 0U; i < (uint8_t)(33U + s_turnaround); i++)
   {
-    clockPulse();
+    clockCycle();
   }
   DIO_DRIVE();
   DIO_LOW();
@@ -509,7 +515,7 @@ static void lineResetOnly(void)
   DIO_HIGH();
   for (int i = 0; i < 60; i++)
   {
-    clockPulse();
+    clockCycle();
   }
 }
 
@@ -523,6 +529,20 @@ void swdJtagToSwd(void)
 {
   DIO_DRIVE();
   writeBits(0xE79EU, 16);
+}
+
+void swdDormantToSwd(void)
+{
+  /* ARM CoreSight ADIv5.2 128-bit Selection Alert + SWD activation code 0x1A */
+  static const uint8_t s_dormantSeq[] = {
+    0xFFU,
+    0x92U, 0xF3U, 0x09U, 0x62U, 0x95U, 0x2DU, 0x85U, 0x86U,
+    0xE9U, 0xAFU, 0xDDU, 0xE3U, 0xA2U, 0x0EU, 0xBCU, 0x19U,
+    0xA0U, 0xF1U,
+    0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU
+  };
+  swdSwjSequence(sizeof(s_dormantSeq) * 8U, s_dormantSeq);
+  idleCycles(8U);
 }
 
 void swdClearErrors(void)
@@ -599,6 +619,7 @@ uint32_t swdConnect(void)
 {
   for (int attempt = 0; attempt < 4; attempt++)
   {
+    /* 1. Standard JTAG-to-SWD (STM32F1, F2, F3, F4) */
     lineResetOnly();
     swdJtagToSwd();
     swdLineReset();
@@ -609,7 +630,19 @@ uint32_t swdConnect(void)
       swdWriteDP(DP_SELECT, 0U);
       return id;
     }
-    HAL_Delay(2);
+
+    /* 2. ADIv5.2 Dormant-to-SWD (STM32G4, STM32L4+, STM32G0) */
+    lineResetOnly();
+    swdDormantToSwd();
+    swdLineReset();
+    if (swdReadDP(DP_IDCODE, &id) && id != 0U && id != 0xFFFFFFFFUL)
+    {
+      swdClearErrors();
+      swdWriteDP(DP_SELECT, 0U);
+      return id;
+    }
+
+    HAL_Delay(5);
   }
   if (s_lastError == 0)
   {

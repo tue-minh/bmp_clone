@@ -1,0 +1,5 @@
+# Build directories
+firmware/build/
+gui/build/
+gui/dist/
+.vscode/

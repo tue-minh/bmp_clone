@@ -85,9 +85,10 @@ void swdSequenceIn(uint32_t bitCount, uint8_t *data);
 /* Single CMSIS-DAP SWD transfer with wait_retry & idle_cycles (returns DAP_TRANSFER_*) */
 uint8_t swdDapTransfer(uint8_t reqCmd, uint32_t *data);
 
-/* High-level ADIv5 SWD API (ported from ESP_OTA_STM32) */
+/* High-level ADIv5 SWD API (ported from ESP_OTA_STM32 & ADIv5.2) */
 void swdLineReset(void);
 void swdJtagToSwd(void);
+void swdDormantToSwd(void);
 uint32_t swdConnect(void);
 
 bool swdReadDP(uint8_t addr, uint32_t *out);

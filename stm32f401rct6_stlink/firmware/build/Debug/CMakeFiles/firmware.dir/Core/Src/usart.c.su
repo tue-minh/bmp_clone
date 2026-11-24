@@ -1,3 +1,0 @@
-D:/Project_Kicad/bmp_clone/stm32f401rct6_stlink/firmware/Core/Src/usart.c:31:6:MX_USART1_UART_Init	8	static
-D:/Project_Kicad/bmp_clone/stm32f401rct6_stlink/firmware/Core/Src/usart.c:59:6:HAL_UART_MspInit	48	static
-D:/Project_Kicad/bmp_clone/stm32f401rct6_stlink/firmware/Core/Src/usart.c:97:6:HAL_UART_MspDeInit	16	static

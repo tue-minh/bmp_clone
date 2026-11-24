@@ -427,9 +427,21 @@ std::vector<uint32_t> LinuxCmsisDap::transferBlockRead(uint8_t reqByte, uint32_t
 }
 
 void LinuxCmsisDap::swdLineResetToSwd() {
+    // 1. Line reset (56 clocks HIGH) + JTAG-to-SWD (0x9E, 0xE7) + Line reset (56 clocks HIGH)
     swjSequence(56, {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF});
     swjSequence(16, {0x9E, 0xE7});
     swjSequence(56, {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF});
+    swjSequence(8, {0x00});
+
+    // 2. ARM ADIv5.2 Dormant-to-SWD sequence (for STM32G4, STM32L4+, STM32G0)
+    static const uint8_t s_dormantSeq[] = {
+        0xFF,
+        0x92, 0xF3, 0x09, 0x62, 0x95, 0x2D, 0x85, 0x86,
+        0xE9, 0xAF, 0xDD, 0xE3, 0xA2, 0x0E, 0xBC, 0x19,
+        0xA0, 0xF1,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
+    };
+    swjSequence(sizeof(s_dormantSeq) * 8, std::vector<uint8_t>(s_dormantSeq, s_dormantSeq + sizeof(s_dormantSeq)));
     swjSequence(8, {0x00});
 }
 
@@ -528,8 +540,17 @@ uint32_t LinuxCmsisDap::attachAndHalt(uint32_t clockHz, bool connectUnderReset) 
     transferConfigure(2, 500, 0);
     swdConfigure(0);
     if (connectUnderReset) { swjPins(0x00, 0x80, 0); msleep(15); }
-    swdLineResetToSwd();
-    uint32_t dpId = readDp(0x00);
+    uint32_t dpId = 0;
+    for (int retry = 0; retry < 3; ++retry) {
+        try {
+            swdLineResetToSwd();
+            dpId = readDp(0x00);
+            if (dpId != 0 && dpId != 0xFFFFFFFF) break;
+        } catch (...) {
+            if (retry == 2) throw;
+            msleep(10);
+        }
+    }
     writeAbort(0x1E);
     writeDp(0x08, 0);
     writeDp(0x04, 0x50000000);

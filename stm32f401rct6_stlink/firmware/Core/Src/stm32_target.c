@@ -624,15 +624,17 @@ static bool flashG4L4(uint32_t flashAddr, const uint8_t *data, uint32_t length,
     }
   }
 
-  uint32_t numPages = (length + pageSize - 1U) / pageSize;
+  uint32_t startPage = (flashAddr >= STM32_FLASH_BASE) ? ((flashAddr - STM32_FLASH_BASE) / pageSize) : 0U;
+  uint32_t numPages  = (length + pageSize - 1U) / pageSize;
   for (uint32_t p = 0U; p < numPages; p++)
   {
+    uint32_t pageNum = startPage + p;
     if (progress != NULL) progress("erase", p, numPages);
     if (!waitFlashReady(G4_FLASH_SR, G4_SR_BSY, G4_SR_ERRORS, G4_SR_EOP, 100U, err, errLen))
       return false;
     memWrite32(G4_FLASH_SR, G4_SR_ERRORS | G4_SR_EOP);
-    memWrite32(G4_FLASH_CR, G4_CR_PER | G4_CR_PNB(p));
-    memWrite32(G4_FLASH_CR, G4_CR_PER | G4_CR_PNB(p) | G4_CR_STRT);
+    memWrite32(G4_FLASH_CR, G4_CR_PER | G4_CR_PNB(pageNum));
+    memWrite32(G4_FLASH_CR, G4_CR_PER | G4_CR_PNB(pageNum) | G4_CR_STRT);
     if (!waitFlashReady(G4_FLASH_SR, G4_SR_BSY, G4_SR_ERRORS, G4_SR_EOP, 1000U, err, errLen))
       return false;
   }

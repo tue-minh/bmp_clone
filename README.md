@@ -1,53 +1,53 @@
 # 🔧 BMP Clone & TUE CMSIS-DAP Programmer / Debugger
 
-Repository chứa phần cứng KiCad, firmware và phần mềm nạp/debug cho hai phiên bản mạch nạp STM32:
+This repository contains the KiCad hardware, firmware, and host software for two STM32 debug probe implementations:
 
-1. **`stm32f401rct6_stlink/` (Phiên bản mới - v2.1.0):** Mạch nạp **TUE CMSIS-DAP + Virtual COM Port** dùng **STM32F401RCT6**, kèm ứng dụng **GUI nhân C++17 thuần** cho **Windows** và **Ubuntu**.
-2. **`blackmagic-firmware-v1.10.2/` & `hardware/`:** Mạch **Black Magic Probe (BMP)** dùng **STM32F103C8T6 (Bluepill)**.
+1. **`stm32f401rct6_stlink/` (Latest - v2.1.0):** **TUE CMSIS-DAP + Virtual COM Port** probe based on **STM32F401RCT6**, paired with a lightweight **native C++17 GUI** for **Windows** and **Ubuntu**.
+2. **`blackmagic-firmware-v1.10.2/` & `hardware/`:** **Black Magic Probe (BMP)** clone based on **STM32F103C8T6 (Bluepill)**.
 
 ---
 
-## 📁 Cấu trúc thư mục
+## 📁 Repository Structure
 
-| Thư mục / File | Mô tả |
+| Folder / File | Description |
 | :--- | :--- |
-| [`stm32f401rct6_stlink/`](stm32f401rct6_stlink/firmware/README.md) | Dự án mạch nạp STM32F401RCT6 (KiCad PCB + Firmware CMSIS-DAP/VCP + GUI C++ + Release v2.1.0) |
-| [`stm32f401rct6_stlink/firmware/`](stm32f401rct6_stlink/firmware/README.md) | Mã nguồn firmware STM32F401RCT6 (USB Composite HID + CDC VCP, SWD, LED công nghiệp) |
-| [`stm32f401rct6_stlink/gui/`](stm32f401rct6_stlink/gui/main_gui.cpp) | Giao diện Native C++17 (Win32 API cho Windows & Qt5 cho Ubuntu) |
-| [`stm32f401rct6_stlink/release/v2.1.0/`](stm32f401rct6_stlink/release/v2.1.0/RELEASE_NOTES.md) | Bộ file Release v2.1.0 (`.bin`/`.hex` STM32F401, `.exe` Windows, `.deb` Ubuntu) |
-| `blackmagic-firmware-v1.10.2/` | Firmware Black Magic Probe v1.10.2 cho STM32F103C8T6 |
-| `hardware/` & `Tue_BMP_Gerber/` | Thiết kế phần cứng KiCad & file Gerber cho bản Bluepill BMP |
+| [`stm32f401rct6_stlink/`](stm32f401rct6_stlink/firmware/README.md) | STM32F401RCT6 probe project (KiCad PCB + CMSIS-DAP/VCP Firmware + C++ GUI + Release v2.1.0) |
+| [`stm32f401rct6_stlink/firmware/`](stm32f401rct6_stlink/firmware/README.md) | STM32F401RCT6 firmware source (USB Composite HID + CDC VCP, SWD, industrial status LED) |
+| [`stm32f401rct6_stlink/gui/`](stm32f401rct6_stlink/gui/main_gui.cpp) | Native C++17 GUI (Win32 API for Windows & Qt5 for Ubuntu) |
+| [`stm32f401rct6_stlink/release/v2.1.0/`](stm32f401rct6_stlink/release/v2.1.0/RELEASE_NOTES.md) | Prebuilt v2.1.0 Release binaries (STM32F401 `.bin`/`.hex`, Windows `.exe`, Ubuntu `.deb`) |
+| `blackmagic-firmware-v1.10.2/` | Black Magic Probe v1.10.2 firmware for STM32F103C8T6 |
+| `hardware/` & `Tue_BMP_Gerber/` | KiCad hardware design & Gerber files for the Bluepill BMP |
 
 ---
 
-## 🚀 Phần 1: TUE CMSIS-DAP (STM32F401RCT6 - Khuyên dùng)
+## 🚀 Part 1: TUE CMSIS-DAP (STM32F401RCT6 - Recommended)
 
-### ✨ Tính năng chính
+### ✨ Key Features
 * **USB Composite (`VID=0x0483`, `PID=0x5752`):**
-  * **Interface 0:** `CMSIS-DAP v1.10` HID (tương thích OpenOCD, pyOCD, Keil MDK, STM32CubeIDE, Probe-rs).
-  * **Interface 1 & 2:** `USB Serial Device (VCP)` cầu nối trực tiếp ra `USART1` (`PA9` TX / `PB7` RX).
-* **LED trạng thái chuẩn công nghiệp (`PC13`):**
-  * *Heartbeat (2 chớp / 1.2s):* Idle / Sẵn sàng.
-  * *Sáng liên tục:* Đã kết nối SWD / Target.
-  * *Nháy nhanh (16.7 Hz):* Đang nạp / Xóa / Verify Flash.
-  * *Nháy kép (1.0s):* Target CPU đang Halted (Debug).
-  * *3 chớp dồn dập:* Lỗi SWD / Verify mismatch.
-* **Nút bấm phần cứng (`PA0`):** Giữ nút để kéo chân `PB8` (`nRESET`) xuống `0V` (nhả ra về `3.3V` ngay).
-* **GUI Native C++17 siêu nhẹ (`stm32f401rct6_stlink/gui/`):**
-  * Tự động nhận thiết bị USB Plug & Play (HID + COM).
-  * Nạp / Verify / Mass Erase trực tiếp file `.bin`, `.hex`, `.elf` cho **STM32F1 / F3 / F4 / G4 / L4** không cần OpenOCD, hoặc tick **`Use OpenOCD`** để dùng qua OpenOCD + GDB Server (`:3333`).
-  * Đọc trực tiếp tên chip, ID, dung lượng Flash, RDP, UID và 256 bytes Flash đầu tiên khi nhấn **Connect**.
-  * 9 mức tốc độ SWD (`4 MHz` – `20 kHz`), **Memory Hex Viewer & Mem32**, và **UART Terminal** (`Echo TX`, tự xóa ô nhập, tùy chọn tick `\r`, `\n`, `\t`, `Parse \r \n \t \xHH`).
+  * **Interface 0:** `CMSIS-DAP v1.10` HID (compatible with OpenOCD, pyOCD, Keil MDK, STM32CubeIDE, Probe-rs).
+  * **Interface 1 & 2:** `USB Serial Device (VCP)` bridged directly to `USART1` (`PA9` TX / `PB7` RX).
+* **Industrial Status LED (`PC13`):**
+  * *Double Heartbeat (1.2s):* Idle / Ready.
+  * *Solid ON:* SWD / Target Connected.
+  * *Rapid Flicker (16.7 Hz):* Erasing / Flashing / Verifying.
+  * *Double Blink (1.0s):* Target CPU Halted (Debug).
+  * *Triple Rapid Blink:* SWD Error / Verify Mismatch.
+* **Hardware Reset Button (`PA0`):** Press and hold to pull `PB8` (`nRESET`) to `0V`; release to return to `3.3V` immediately (non-blocking).
+* **Lightweight Native C++17 GUI (`stm32f401rct6_stlink/gui/`):**
+  * Automatic USB Plug & Play detection (HID + COM).
+  * Direct `.bin`, `.hex`, and `.elf` flashing/verifying/mass-erasing for **STM32F1 / F3 / F4 / G4 / L4** without OpenOCD, or toggle **`Use OpenOCD`** + GDB Server (`:3333`).
+  * Clicking **Connect** reads the chip name, IDs, Flash size, RDP, UID, and the first 256 bytes of on-chip Flash.
+  * 9 SWD clock speeds (`4 MHz` – `20 kHz`), **Memory Hex Viewer & Mem32**, and **UART Terminal** (`Echo TX`, auto-clear input, selectable `\r`, `\n`, `\t`, and `Parse \r \n \t \xHH`).
 
-### 📦 Tải & Cài đặt nhanh (Release v2.1.0)
-* **Firmware STM32F401RCT6:** Nạp `stm32f401rct6_stlink/release/v2.1.0/tue-cmsis-dap-stm32f401rct6-v2.1.0.bin` tại địa chỉ `0x08000000` (qua DFU hoặc ST-Link).
-* **Windows:** Chạy trực tiếp `stm32f401rct6_stlink/release/v2.1.0/TUE_CMSIS_DAP_Windows_v2.1.0.exe`.
+### 📦 Quick Download & Install (Release v2.1.0)
+* **STM32F401RCT6 Firmware:** Flash `stm32f401rct6_stlink/release/v2.1.0/tue-cmsis-dap-stm32f401rct6-v2.1.0.bin` at `0x08000000` (via DFU or ST-Link).
+* **Windows:** Run `stm32f401rct6_stlink/release/v2.1.0/TUE_CMSIS_DAP_Windows_v2.1.0.exe` directly.
 * **Ubuntu / Linux:**
   ```bash
   sudo apt install ./stm32f401rct6_stlink/release/v2.1.0/tue-cmsis-dap_2.1.0_amd64.deb
   tue-cmsis-dap
   ```
-* Xem hướng dẫn chi tiết build firmware & GUI tại: [`stm32f401rct6_stlink/firmware/README.md`](stm32f401rct6_stlink/firmware/README.md).
+* For detailed firmware & GUI build instructions, see [`stm32f401rct6_stlink/firmware/README.md`](stm32f401rct6_stlink/firmware/README.md).
 
 ---
 

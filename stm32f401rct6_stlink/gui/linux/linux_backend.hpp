@@ -109,7 +109,10 @@ public:
                                          uint32_t clockHz = 1000000, bool connectUnderReset = false,
                                          ProgressCallback cb = nullptr);
     CpuDebugStatus readCpuStatus(uint32_t clockHz = 1000000, bool connectUnderReset = false);
+    CpuDebugStatus debugStart(uint32_t clockHz = 1000000, bool connectUnderReset = false);
+    void debugExit(uint32_t clockHz = 1000000);
     std::string cpuControl(const std::string& action, uint32_t clockHz = 1000000);
+    void swdSystemReset(uint32_t clockHz = 1000000);
     void hardResetPulse(uint32_t pulseMs = 50);
 
 private:

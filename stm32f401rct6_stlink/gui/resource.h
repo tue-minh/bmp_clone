@@ -20,6 +20,7 @@
 #define IDM_TOOLS_UART          1202
 #define IDM_TOOLS_OCD_CFG       1203
 #define IDM_TOOLS_GDB_SERVER    1204
+#define IDM_TOOLS_DEBUG         1205
 
 #define IDM_HELP_LED            1301
 #define IDM_HELP_ABOUT          1302
@@ -32,14 +33,23 @@
 #define IDC_CHK_UNDER_RESET     2005
 
 #define IDC_BTN_CONNECT         2010
+#define IDC_BTN_DISCONNECT      2019
 #define IDC_BTN_FLASH           2011
 #define IDC_BTN_VERIFY          2012
-#define IDC_BTN_RESET           2013
+#define IDC_BTN_HW_RESET        2013
+#define IDC_BTN_SWD_RESET       2023
 #define IDC_BTN_ERASE           2014
-#define IDC_BTN_HALT            2015
-#define IDC_BTN_RUN             2016
-#define IDC_BTN_STEP            2017
-#define IDC_BTN_REGS            2018
+#define IDC_BTN_OPEN_DEBUG      2024
+
+// Debug Window Control IDs
+#define IDC_DBG_BTN_START       2101
+#define IDC_DBG_BTN_EXIT        2102
+#define IDC_DBG_BTN_HALT        2103
+#define IDC_DBG_BTN_RUN         2104
+#define IDC_DBG_BTN_STEP_INTO   2105
+#define IDC_DBG_BTN_STEP_OUT    2106
+#define IDC_DBG_BTN_REGS        2107
+#define IDC_DBG_TEXT            2108
 
 #define IDC_EDT_FILE_PATH       2020
 #define IDC_BTN_BROWSE          2021

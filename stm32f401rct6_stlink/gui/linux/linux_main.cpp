@@ -131,23 +131,22 @@ int main(int argc, char* argv[]) {
 
     QMainWindow win;
     QMainWindow* winPtr = &win;
-    win.setWindowTitle("TUE CMSIS-DAP Programmer & Debugger");
+    win.setWindowTitle("TUE CMSIS-DAP Programmer & Debugger v1.0.0");
     win.setFixedSize(900, 620);
 
     QFont monoFont("Monospace", 9);
     monoFont.setStyleHint(QFont::TypeWriter);
 
-    // State
     std::vector<LinuxHidInfo> hidDevices;
     std::mutex hidMutex;
     bool probePresent = false;
     bool targetConnected = false;
+    bool debugActive = false;
     std::atomic<bool> busy{false};
     QString ocdPath = "openocd";
     QProcess gdbProc;
     LinuxSerialPort serialPort;
 
-    // Central Layout
     auto* central = new QWidget(&win);
     win.setCentralWidget(central);
     auto* root = new QVBoxLayout(central);
@@ -176,17 +175,16 @@ int main(int argc, char* argv[]) {
 
     // Row 2: Function Buttons
     auto* row2 = new QHBoxLayout();
-    auto* btnConnect = new QPushButton("Connect");
-    auto* btnFlash   = new QPushButton("Flash");
-    auto* btnVerify  = new QPushButton("Verify");
-    auto* btnReset   = new QPushButton("Reset");
-    auto* btnErase   = new QPushButton("Mass Erase");
-    auto* btnHalt    = new QPushButton("Halt");
-    auto* btnRun     = new QPushButton("Run");
-    auto* btnStep    = new QPushButton("Step");
-    auto* btnRegs    = new QPushButton("Read Regs");
+    auto* btnConnect    = new QPushButton("Connect");
+    auto* btnDisconnect = new QPushButton("Disconnect");
+    auto* btnFlash      = new QPushButton("Flash");
+    auto* btnVerify     = new QPushButton("Verify");
+    auto* btnHwReset    = new QPushButton("HW Reset");
+    auto* btnSwdReset   = new QPushButton("SWD Reset");
+    auto* btnErase      = new QPushButton("Mass Erase");
+    auto* btnOpenDebug  = new QPushButton("Debug...");
 
-    for (auto* b : {btnConnect, btnFlash, btnVerify, btnReset, btnErase, btnHalt, btnRun, btnStep, btnRegs}) {
+    for (auto* b : {btnConnect, btnDisconnect, btnFlash, btnVerify, btnHwReset, btnSwdReset, btnErase, btnOpenDebug}) {
         b->setMinimumHeight(28);
         row2->addWidget(b);
     }
@@ -205,27 +203,13 @@ int main(int argc, char* argv[]) {
     row3->addWidget(edtBaseAddr);
     root->addLayout(row3);
 
-    // Center Split: Left = Target Status & On-Chip Flash, Right = Debug & CPU Regs
-    auto* centerRow = new QHBoxLayout();
-    auto* leftCol = new QVBoxLayout();
-    leftCol->addWidget(new QLabel("Target Status & On-Chip Flash:"));
+    // Center: Full-width Target Status & On-Chip Flash
+    root->addWidget(new QLabel("Target Status & On-Chip Flash:"));
     auto* edtTarget = new QPlainTextEdit(
         "Not connected.\nPlug in the CMSIS-DAP probe and click [Connect] to inspect chip & flash content.");
     edtTarget->setReadOnly(true);
     edtTarget->setFont(monoFont);
-    leftCol->addWidget(edtTarget);
-
-    auto* rightCol = new QVBoxLayout();
-    rightCol->addWidget(new QLabel("Debug & CPU Registers:"));
-    auto* edtDebug = new QPlainTextEdit(
-        "CPU: Not connected.\nAfter Connect, use Halt / Run / Step / Read Regs.");
-    edtDebug->setReadOnly(true);
-    edtDebug->setFont(monoFont);
-    rightCol->addWidget(edtDebug);
-
-    centerRow->addLayout(leftCol, 58);
-    centerRow->addLayout(rightCol, 42);
-    root->addLayout(centerRow, 1);
+    root->addWidget(edtTarget, 1);
 
     // Bottom: Progress + Clear Log + Log
     auto* progRow = new QHBoxLayout();
@@ -242,6 +226,29 @@ int main(int argc, char* argv[]) {
     edtLog->setFixedHeight(135);
     root->addWidget(edtLog);
 
+    // Dedicated Debug Window
+    QDialog dbgDlg(&win);
+    dbgDlg.setWindowTitle("CPU Debug Session");
+    dbgDlg.setFixedSize(660, 400);
+    auto* dbgLay = new QVBoxLayout(&dbgDlg);
+    auto* dbgRow = new QHBoxLayout();
+    auto* dBtnStart    = new QPushButton("Start Debug");
+    auto* dBtnExit     = new QPushButton("Exit Debug");
+    auto* dBtnHalt     = new QPushButton("Halt");
+    auto* dBtnRun      = new QPushButton("Run");
+    auto* dBtnStepInto = new QPushButton("Step Into");
+    auto* dBtnStepOut  = new QPushButton("Step Out");
+    auto* dBtnRegs     = new QPushButton("Read Regs");
+    for (auto* b : {dBtnStart, dBtnExit, dBtnHalt, dBtnRun, dBtnStepInto, dBtnStepOut, dBtnRegs}) {
+        b->setMinimumHeight(28);
+        dbgRow->addWidget(b);
+    }
+    dbgLay->addLayout(dbgRow);
+    auto* dText = new QPlainTextEdit("Debug Session: Inactive.\nClick [Start Debug] to halt the CPU and inspect registers.");
+    dText->setReadOnly(true);
+    dText->setFont(monoFont);
+    dbgLay->addWidget(dText, 1);
+
     auto postLog = [edtLog](const QString& msg) {
         QString line = QString("[%1] %2").arg(QTime::currentTime().toString("HH:mm:ss"), msg);
         QMetaObject::invokeMethod(edtLog, [edtLog, line]() {
@@ -253,16 +260,24 @@ int main(int argc, char* argv[]) {
         bool canOp = targetConnected && !busy.load();
         bool notBusy = !busy.load();
         bool ocd = chkUseOcd->isChecked();
-        btnConnect->setEnabled(notBusy && (probePresent || ocd));
+        btnConnect->setEnabled(notBusy && !targetConnected && (probePresent || ocd));
+        btnDisconnect->setEnabled(canOp);
         btnFlash->setEnabled(canOp);
         btnVerify->setEnabled(canOp);
-        btnReset->setEnabled(canOp);
+        btnHwReset->setEnabled(canOp);
+        btnSwdReset->setEnabled(canOp);
         btnErase->setEnabled(canOp);
-        btnHalt->setEnabled(canOp);
-        btnRun->setEnabled(canOp);
-        btnStep->setEnabled(canOp && !ocd);
-        btnRegs->setEnabled(canOp && !ocd);
+        btnOpenDebug->setEnabled(canOp);
         cmbOcdTarget->setEnabled(ocd && notBusy);
+
+        bool dbgOp = canOp && debugActive;
+        dBtnStart->setEnabled(canOp && !debugActive);
+        dBtnExit->setEnabled(dbgOp);
+        dBtnHalt->setEnabled(dbgOp);
+        dBtnRun->setEnabled(dbgOp);
+        dBtnStepInto->setEnabled(dbgOp && !ocd);
+        dBtnStepOut->setEnabled(dbgOp && !ocd);
+        dBtnRegs->setEnabled(dbgOp && !ocd);
     };
 
     auto getSelectedHid = [&]() -> LinuxHidInfo {
@@ -278,7 +293,7 @@ int main(int argc, char* argv[]) {
         std::thread([&, fn]() {
             try { fn(); }
             catch (const std::exception& ex) { postLog(QString("[ERROR] ") + ex.what()); }
-            QMetaObject::invokeMethod(&win, [&]() {
+            QMetaObject::invokeMethod(winPtr, [&]() {
                 busy.store(false);
                 updateButtons();
             }, Qt::QueuedConnection);
@@ -291,11 +306,9 @@ int main(int argc, char* argv[]) {
         else if (info.rdp >= 0) rdpStr = QString("Protected (0x%1)").arg(info.rdp, 2, 16, QChar('0')).toUpper();
 
         QString out = QString(
-            "Chip:      %1\n"
-            "DEV_ID:    0x%2 (Rev 0x%3) | Family: %4\n"
-            "DP_IDCODE: 0x%5 | DBGMCU: 0x%6\n"
-            "Flash:     %7 KB (Page/Sector: %8 B) | RDP: %9\n"
-            "UID:       %10\n")
+            "Chip: %1  |  DEV_ID: 0x%2 (Rev 0x%3)  |  Family: %4\n"
+            "DP_IDCODE: 0x%5  |  DBGMCU: 0x%6  |  Flash: %7 KB (Sector/Page: %8 B)  |  RDP: %9\n"
+            "UID: %10\n")
             .arg(QString::fromStdString(info.name))
             .arg(info.devId, 3, 16, QChar('0')).toUpper()
             .arg(info.revId, 4, 16, QChar('0')).toUpper()
@@ -312,8 +325,9 @@ int main(int argc, char* argv[]) {
                           (info.flashPreview[6] << 16) | (info.flashPreview[7] << 24);
             bool blank = std::all_of(info.flashPreview.begin(), info.flashPreview.end(),
                                      [](uint8_t b) { return b == 0xFF; });
-            out += QString("--- On-Chip Flash Content @ 0x08000000 ---\n"
-                           "Status: %1 | Init SP: 0x%2 | Reset_Handler: 0x%3\n\n")
+            out += QString("--- On-Chip Flash Preview (%1 bytes @ 0x08000000) ---\n"
+                           "Flash Status: %2  |  Initial SP: 0x%3  |  Reset_Handler: 0x%4\n\n")
+                .arg(info.flashPreview.size())
                 .arg(blank ? "BLANK (0xFF)" : "PROGRAMMED")
                 .arg(sp, 8, 16, QChar('0')).toUpper()
                 .arg(rv, 8, 16, QChar('0')).toUpper();
@@ -324,26 +338,25 @@ int main(int argc, char* argv[]) {
 
     auto formatDebugText = [](const CpuDebugStatus& st) -> QString {
         return QString(
-            "CPU State: %1\n"
-            "PC   = 0x%2   SP   = 0x%3\n"
-            "LR   = 0x%4   xPSR = 0x%5\n"
-            "R0   = 0x%6   R1   = 0x%7\n"
-            "R2   = 0x%8   R3   = 0x%9\n"
-            "R12  = 0x%10   MSP  = 0x%11\n"
-            "PSP  = 0x%12\n"
-            "CFSR = 0x%13   HFSR = 0x%14\n")
-            .arg(st.halted ? "HALTED (Debug Mode)" : "RUNNING")
+            "Debug Session: ACTIVE   |   CPU State: %1\n"
+            "-------------------------------------------------------------\n"
+            "PC   = 0x%2     SP   = 0x%3     LR   = 0x%4\n"
+            "xPSR = 0x%5     MSP  = 0x%6     PSP  = 0x%7\n"
+            "R0   = 0x%8     R1   = 0x%9     R2   = 0x%10\n"
+            "R3   = 0x%11     R12  = 0x%12\n"
+            "CFSR = 0x%13     HFSR = 0x%14\n")
+            .arg(st.halted ? "HALTED (Paused)" : "RUNNING")
             .arg(st.pc, 8, 16, QChar('0')).toUpper()
             .arg(st.sp, 8, 16, QChar('0')).toUpper()
             .arg(st.lr, 8, 16, QChar('0')).toUpper()
             .arg(st.xpsr, 8, 16, QChar('0')).toUpper()
+            .arg(st.msp, 8, 16, QChar('0')).toUpper()
+            .arg(st.psp, 8, 16, QChar('0')).toUpper()
             .arg(st.r0, 8, 16, QChar('0')).toUpper()
             .arg(st.r1, 8, 16, QChar('0')).toUpper()
             .arg(st.r2, 8, 16, QChar('0')).toUpper()
             .arg(st.r3, 8, 16, QChar('0')).toUpper()
             .arg(st.r12, 8, 16, QChar('0')).toUpper()
-            .arg(st.msp, 8, 16, QChar('0')).toUpper()
-            .arg(st.psp, 8, 16, QChar('0')).toUpper()
             .arg(st.cfsr, 8, 16, QChar('0')).toUpper()
             .arg(st.hfsr, 8, 16, QChar('0')).toUpper();
     };
@@ -357,19 +370,14 @@ int main(int argc, char* argv[]) {
         QProcess p;
         p.setProcessChannelMode(QProcess::MergedChannels);
         p.start(ocdPath, args);
-        if (!p.waitForStarted(3000)) {
-            postLog("[OCD] Failed to start openocd");
-            return -1;
-        }
+        if (!p.waitForStarted(3000)) { postLog("[OCD] Failed to start openocd"); return -1; }
         p.waitForFinished(-1);
-        const QString out = QString::fromUtf8(p.readAllStandardOutput());
-        for (const auto& line : out.split('\n', Qt::SkipEmptyParts)) {
+        for (const auto& line : QString::fromUtf8(p.readAllStandardOutput()).split('\n', Qt::SkipEmptyParts)) {
             postLog("[OCD] " + line.trimmed());
         }
         return p.exitCode();
     };
 
-    // USB Auto-Detect Timer (every 500ms)
     auto refreshUsb = [&](bool logChange) {
         auto devs = LinuxHidDevice::enumerateDapDevices();
         auto coms = LinuxSerialPort::enumeratePorts();
@@ -381,19 +389,19 @@ int main(int argc, char* argv[]) {
         }
         if (probePresent) {
             QString comStr = coms.empty() ? "" : (" | " + QString::fromStdString(coms[0]));
-            QString badge = QString("USB: Connected - %1 (%2:%3)%4")
+            lblUsb->setText(QString("USB: Connected - %1 (%2:%3)%4")
                 .arg(QString::fromStdString(devs[0].product))
                 .arg(devs[0].vid, 4, 16, QChar('0')).toUpper()
                 .arg(devs[0].pid, 4, 16, QChar('0')).toUpper()
-                .arg(comStr);
-            lblUsb->setText(badge);
+                .arg(comStr));
             if (logChange && !was) postLog("[USB] Device detected: " + QString::fromStdString(devs[0].product));
         } else {
             lblUsb->setText("USB: Waiting for CMSIS-DAP probe...");
             if (targetConnected) {
                 targetConnected = false;
+                debugActive = false;
                 edtTarget->setPlainText("Disconnected.\nPlug in the CMSIS-DAP probe and click [Connect].");
-                edtDebug->setPlainText("CPU: Not connected.");
+                dText->setPlainText("Debug Session: Inactive.");
             }
             if (logChange && was) postLog("[USB] Programmer disconnected.");
         }
@@ -411,7 +419,6 @@ int main(int argc, char* argv[]) {
         if (!p.isEmpty()) { edtFile->setText(p); postLog("[FILE] Selected: " + p); }
     });
 
-    // Connect
     QObject::connect(btnConnect, &QPushButton::clicked, [&]() {
         uint32_t speed = cmbSpeed->currentData().toUInt();
         bool underReset = chkUnderReset->isChecked();
@@ -421,19 +428,15 @@ int main(int argc, char* argv[]) {
                 int rc = runOcdSync({"init", "targets", "exit"});
                 QMetaObject::invokeMethod(winPtr, [&, rc]() {
                     targetConnected = (rc == 0);
-                    edtTarget->setPlainText(rc == 0
-                        ? "Mode: OpenOCD (interface/cmsis-dap.cfg)\nStatus: Connected OK."
-                        : "OpenOCD connection failed.");
+                    edtTarget->setPlainText(rc == 0 ? "Mode: OpenOCD\nStatus: Connected OK." : "OpenOCD failed.");
                     updateButtons();
                 }, Qt::QueuedConnection);
                 return;
             }
-            LinuxHidInfo devInfo = getSelectedHid();
-            LinuxHidDevice hid;
-            std::string err;
-            if (!hid.open(devInfo, err)) throw std::runtime_error(err);
+            LinuxHidDevice hid; std::string err;
+            if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
-            postLog("[SWD] Connecting and reading Chip ID + Flash @ 0x08000000...");
+            postLog("[SWD] Connecting and reading Chip ID + 512B Flash @ 0x08000000...");
             auto info = dap.probeTarget(speed, underReset, true);
             postLog(QString("[SWD] Connected: %1 | Flash=%2 KB").arg(QString::fromStdString(info.name)).arg(info.flashKB));
             QString txt = formatTargetText(info);
@@ -445,7 +448,32 @@ int main(int argc, char* argv[]) {
         });
     });
 
-    // Flash
+    QObject::connect(btnDisconnect, &QPushButton::clicked, [&]() {
+        uint32_t speed = cmbSpeed->currentData().toUInt();
+        bool wasDbg = debugActive;
+        bool ocd = chkUseOcd->isChecked();
+        runBg([&, speed, wasDbg, ocd]() {
+            if (!ocd && probePresent) {
+                try {
+                    LinuxHidDevice hid; std::string err;
+                    if (hid.open(getSelectedHid(), err)) {
+                        LinuxCmsisDap dap(hid);
+                        if (wasDbg) dap.debugExit(speed);
+                        else dap.disconnect();
+                    }
+                } catch (...) {}
+            }
+            postLog("[SWD] Disconnected from target.");
+            QMetaObject::invokeMethod(winPtr, [&]() {
+                targetConnected = false;
+                debugActive = false;
+                edtTarget->setPlainText("Disconnected.\nClick [Connect] to inspect chip & flash content.");
+                dText->setPlainText("Debug Session: Inactive.");
+                updateButtons();
+            }, Qt::QueuedConnection);
+        });
+    });
+
     QObject::connect(btnFlash, &QPushButton::clicked, [&]() {
         QString fwPath = edtFile->text().trimmed();
         if (fwPath.isEmpty()) { QMessageBox::warning(&win, "No File", "Select a firmware file first."); return; }
@@ -464,10 +492,8 @@ int main(int argc, char* argv[]) {
             }
             auto img = loadFirmwareImageLinux(fwPath.toStdString(), baseAddr);
             postLog(QString("[FLASH] Programming %1 bytes @ 0x%2").arg(img.data.size()).arg(img.baseAddr, 8, 16, QChar('0')));
-            LinuxHidInfo devInfo = getSelectedHid();
-            LinuxHidDevice hid;
-            std::string err;
-            if (!hid.open(devInfo, err)) throw std::runtime_error(err);
+            LinuxHidDevice hid; std::string err;
+            if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
             auto info = dap.flashImage(img.baseAddr, img.data, speed, underReset, true,
                 [&](const std::string& st, uint32_t done, uint32_t tot) {
@@ -481,7 +507,6 @@ int main(int argc, char* argv[]) {
         });
     });
 
-    // Verify
     QObject::connect(btnVerify, &QPushButton::clicked, [&]() {
         QString fwPath = edtFile->text().trimmed();
         if (fwPath.isEmpty()) { QMessageBox::warning(&win, "No File", "Select a firmware file first."); return; }
@@ -503,8 +528,7 @@ int main(int argc, char* argv[]) {
         });
     });
 
-    // Reset
-    QObject::connect(btnReset, &QPushButton::clicked, [&]() {
+    QObject::connect(btnHwReset, &QPushButton::clicked, [&]() {
         bool ocd = chkUseOcd->isChecked();
         runBg([&, ocd]() {
             if (ocd) { runOcdSync({"init", "reset run", "exit"}); return; }
@@ -512,11 +536,23 @@ int main(int argc, char* argv[]) {
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
             dap.hardResetPulse(50);
-            postLog("[SWD] Hardware Reset (nRESET) pulse sent.");
+            postLog("[HW RESET] Asserted nRESET pin (PB8) LOW 50ms -> HIGH.");
         });
     });
 
-    // Erase
+    QObject::connect(btnSwdReset, &QPushButton::clicked, [&]() {
+        uint32_t speed = cmbSpeed->currentData().toUInt();
+        bool ocd = chkUseOcd->isChecked();
+        runBg([&, speed, ocd]() {
+            if (ocd) { runOcdSync({"init", "reset_config none", "reset run", "exit"}); return; }
+            LinuxHidDevice hid; std::string err;
+            if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
+            LinuxCmsisDap dap(hid);
+            dap.swdSystemReset(speed);
+            postLog("[SWD RESET] Sent AIRCR.SYSRESETREQ over SWD.");
+        });
+    });
+
     QObject::connect(btnErase, &QPushButton::clicked, [&]() {
         if (QMessageBox::question(&win, "Confirm Mass Erase", "Erase entire target Flash?") != QMessageBox::Yes) return;
         uint32_t speed = cmbSpeed->currentData().toUInt();
@@ -535,7 +571,42 @@ int main(int argc, char* argv[]) {
         });
     });
 
-    // Debug Halt / Run / Step / Regs
+    QObject::connect(btnOpenDebug, &QPushButton::clicked, [&]() { dbgDlg.show(); dbgDlg.raise(); });
+
+    QObject::connect(dBtnStart, &QPushButton::clicked, [&]() {
+        uint32_t speed = cmbSpeed->currentData().toUInt();
+        bool ur = chkUnderReset->isChecked();
+        runBg([&, speed, ur]() {
+            LinuxHidDevice hid; std::string err;
+            if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
+            LinuxCmsisDap dap(hid);
+            auto st = dap.debugStart(speed, ur);
+            QString txt = formatDebugText(st);
+            QMetaObject::invokeMethod(winPtr, [&, txt]() {
+                debugActive = true;
+                dText->setPlainText(txt);
+                updateButtons();
+            }, Qt::QueuedConnection);
+            postLog(QString("[DEBUG] Debug session started @ PC=0x%1").arg(st.pc, 8, 16, QChar('0')).toUpper());
+        });
+    });
+
+    QObject::connect(dBtnExit, &QPushButton::clicked, [&]() {
+        uint32_t speed = cmbSpeed->currentData().toUInt();
+        runBg([&, speed]() {
+            LinuxHidDevice hid; std::string err;
+            if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
+            LinuxCmsisDap dap(hid);
+            dap.debugExit(speed);
+            QMetaObject::invokeMethod(winPtr, [&]() {
+                debugActive = false;
+                dText->setPlainText("Debug Session: EXITED (CPU running freely)\nClick [Start Debug] to attach.");
+                updateButtons();
+            }, Qt::QueuedConnection);
+            postLog("[DEBUG] Exited debug mode; CPU running freely.");
+        });
+    });
+
     auto doCpu = [&](const std::string& act) {
         uint32_t speed = cmbSpeed->currentData().toUInt();
         bool ocd = chkUseOcd->isChecked();
@@ -545,26 +616,27 @@ int main(int argc, char* argv[]) {
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
             postLog("[DEBUG] " + QString::fromStdString(dap.cpuControl(act, speed)));
-            if (act == "halt" || act == "step") {
+            if (act == "halt" || act == "step_into" || act == "step_out") {
                 QString txt = formatDebugText(dap.readCpuStatus(speed, false));
-                QMetaObject::invokeMethod(winPtr, [&, txt]() { edtDebug->setPlainText(txt); }, Qt::QueuedConnection);
+                QMetaObject::invokeMethod(winPtr, [&, txt]() { dText->setPlainText(txt); }, Qt::QueuedConnection);
             } else {
-                QMetaObject::invokeMethod(winPtr, [&]() { edtDebug->setPlainText("CPU State: RUNNING"); }, Qt::QueuedConnection);
+                QMetaObject::invokeMethod(winPtr, [&]() { dText->setPlainText("Debug Session: ACTIVE   |   CPU State: RUNNING"); }, Qt::QueuedConnection);
             }
         });
     };
-    QObject::connect(btnHalt, &QPushButton::clicked, [&]() { doCpu("halt"); });
-    QObject::connect(btnRun,  &QPushButton::clicked, [&]() { doCpu("run"); });
-    QObject::connect(btnStep, &QPushButton::clicked, [&]() { doCpu("step"); });
-    QObject::connect(btnRegs, &QPushButton::clicked, [&]() {
+    QObject::connect(dBtnHalt,     &QPushButton::clicked, [&]() { doCpu("halt"); });
+    QObject::connect(dBtnRun,      &QPushButton::clicked, [&]() { doCpu("run"); });
+    QObject::connect(dBtnStepInto, &QPushButton::clicked, [&]() { doCpu("step_into"); });
+    QObject::connect(dBtnStepOut,  &QPushButton::clicked, [&]() { doCpu("step_out"); });
+    QObject::connect(dBtnRegs,     &QPushButton::clicked, [&]() {
         uint32_t speed = cmbSpeed->currentData().toUInt();
-        bool underReset = chkUnderReset->isChecked();
-        runBg([&, speed, underReset]() {
+        bool ur = chkUnderReset->isChecked();
+        runBg([&, speed, ur]() {
             LinuxHidDevice hid; std::string err;
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
-            QString txt = formatDebugText(dap.readCpuStatus(speed, underReset));
-            QMetaObject::invokeMethod(winPtr, [&, txt]() { edtDebug->setPlainText(txt); }, Qt::QueuedConnection);
+            QString txt = formatDebugText(dap.readCpuStatus(speed, ur));
+            QMetaObject::invokeMethod(winPtr, [&, txt]() { dText->setPlainText(txt); }, Qt::QueuedConnection);
         });
     });
 
@@ -740,7 +812,6 @@ int main(int argc, char* argv[]) {
         });
     }
 
-    // Top Menu Bar (File, Tools, Help)
     auto* mFile = win.menuBar()->addMenu("&File");
     QObject::connect(mFile->addAction("Open Firmware (.bin/.hex/.elf)..."), &QAction::triggered, [&]() { btnBrowse->click(); });
     QObject::connect(mFile->addAction("Dump Flash to .bin..."), &QAction::triggered, [&]() {
@@ -768,6 +839,7 @@ int main(int argc, char* argv[]) {
     QObject::connect(mFile->addAction("Exit"), &QAction::triggered, &win, &QMainWindow::close);
 
     auto* mTools = win.menuBar()->addMenu("&Tools");
+    QObject::connect(mTools->addAction("CPU Debug Window..."), &QAction::triggered, [&]() { dbgDlg.show(); dbgDlg.raise(); });
     QObject::connect(mTools->addAction("Memory Hex Viewer && Mem32..."), &QAction::triggered, [&]() { hexDlg.show(); hexDlg.raise(); });
     QObject::connect(mTools->addAction("UART Terminal (Virtual COM)..."), &QAction::triggered, [&]() {
         uComCmb->clear();
@@ -796,16 +868,16 @@ int main(int argc, char* argv[]) {
             "• Rapid Flicker (16.7 Hz): Flashing / Erasing / Verifying\n"
             "• Double Blink (1.0s): Target CPU Halted (Debug)\n"
             "• Triple Rapid Blink: SWD Error / Verify Mismatch\n\n"
-            "On-board Button (PA0): Press to trigger Target Hardware Reset (nRESET).");
+            "On-board Button (PA0): Press and hold to pull nRESET (PB8) LOW.");
     });
     QObject::connect(mHelp->addAction("About"), &QAction::triggered, [&]() {
         QMessageBox::information(&win, "About",
-            "TUE CMSIS-DAP Native C++ Programmer v2.1 (Ubuntu)\n"
+            "TUE CMSIS-DAP Native C++ Programmer v1.0.0 (Ubuntu)\n"
             "Direct USB HID (/dev/hidraw*) + Virtual COM (/dev/ttyACM*)\n"
             "Supports direct SWD flashing (F1/F3/F4/G4/L4) without OpenOCD.");
     });
 
-    postLog("[READY] TUE CMSIS-DAP Native C++ GUI ready. USB plug-and-play active.");
+    postLog("[READY] TUE CMSIS-DAP Native C++ GUI v1.0.0 ready. USB plug-and-play active.");
     win.show();
     return app.exec();
 }

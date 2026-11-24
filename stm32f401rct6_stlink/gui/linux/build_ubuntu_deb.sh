@@ -6,7 +6,7 @@ cd "$SCRIPT_DIR"
 
 OUT_DIR="../dist/ubuntu"
 PKG_NAME="tue-cmsis-dap"
-PKG_VER="2.1.0"
+PKG_VER="1.0.0"
 ARCH="amd64"
 STAGE="/tmp/${PKG_NAME}_${PKG_VER}_${ARCH}"
 

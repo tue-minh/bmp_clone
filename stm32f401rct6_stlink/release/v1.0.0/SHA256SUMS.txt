@@ -1,0 +1,11 @@
+﻿
+Algorithm Hash                                                             Path                                                                                                 
+--------- ----                                                             ----                                                                                                 
+SHA256    41443A4844655EDE3FC2680C38A9E639184140389A80DA0BACAF7A4401D37838 D:\Project_Kicad\bmp_clone\stm32f401rct6_stlink\release\v1.0.0\tue-cmsis-dap-stm32f401rct6-v1.0.0.bin
+SHA256    385796D3491E1D7D6D89262A576DFBDE1CAF68BD6E07218528A22772403772DD D:\Project_Kicad\bmp_clone\stm32f401rct6_stlink\release\v1.0.0\tue-cmsis-dap-stm32f401rct6-v1.0.0.hex
+SHA256    66ABBCA6A3E0302AB567AA09DA9198A11A50DBEA2CE19D182C3DAD0F1B03222F D:\Project_Kicad\bmp_clone\stm32f401rct6_stlink\release\v1.0.0\tue-cmsis-dap-ubuntu-x86_64           
+SHA256    5CF98653EC67E8919E567103FD87CBC9FBE8B52455592795A7CF4FEB298838DE D:\Project_Kicad\bmp_clone\stm32f401rct6_stlink\release\v1.0.0\tue-cmsis-dap_1.0.0_amd64.deb         
+SHA256    D07B19DF4930D78263C4961A8A0FC09ACD769705A8EBDEA2B26B5AD699AC3D3A D:\Project_Kicad\bmp_clone\stm32f401rct6_stlink\release\v1.0.0\TUE_CMSIS_DAP_Windows_v1.0.0.exe      
+
+
+

@@ -488,7 +488,7 @@ Stm32TargetInfo CmsisDapClient::probeTarget(uint32_t clockHz, bool connectUnderR
         Stm32TargetInfo info = identifyHaltedTarget(dpId);
         if (readPreview) {
             try {
-                auto words = memReadBlock(0x08000000, 64); // 256 bytes
+                auto words = memReadBlock(0x08000000, 128); // 512 bytes
                 info.flashPreview.resize(words.size() * 4);
                 for (size_t i = 0; i < words.size(); ++i) {
                     uint32_t w = words[i];
@@ -879,6 +879,39 @@ CpuDebugStatus CmsisDapClient::readCpuStatus(uint32_t clockHz, bool connectUnder
     }
 }
 
+CpuDebugStatus CmsisDapClient::debugStart(uint32_t clockHz, bool connectUnderReset) {
+    return readCpuStatus(clockHz, connectUnderReset);
+}
+
+void CmsisDapClient::debugExit(uint32_t clockHz) {
+    if (connectSwd() != 1) throw std::runtime_error("DAP_Connect(SWD) failed");
+    try {
+        swjClock(clockHz);
+        transferConfigure(2, 500, 0);
+        swdConfigure(0);
+        swdLineResetToSwd();
+        readDp(0x00);
+        writeAbort(0x1E);
+        writeDp(0x08, 0);
+        writeDp(0x04, 0x50000000);
+        for (int i = 0; i < 30; ++i) {
+            if ((readDp(0x04) & 0xA0000000) == 0xA0000000) break;
+            Sleep(2);
+        }
+        uint8_t cnt = 0, ack = 0;
+        std::vector<uint32_t> vals;
+        transfer({{0x01 | 0x00, 0x23000012}}, cnt, ack, vals);
+        try { memWrite32(0xE0002008, 0x00000000); } catch (...) {} // Clear FPB COMP0
+        try { memWrite32(0xE0002000, 0x00000002); } catch (...) {} // Disable FPB
+        memWrite32(0xE000EDFC, 0x00000000); // Clear DEMCR
+        memWrite32(0xE000EDF0, 0xA05F0000); // Clear C_DEBUGEN & C_HALT -> free run
+        disconnect();
+    } catch (...) {
+        try { disconnect(); } catch (...) {}
+        throw;
+    }
+}
+
 std::string CmsisDapClient::cpuControl(const std::string& action, uint32_t clockHz) {
     if (connectSwd() != 1) throw std::runtime_error("DAP_Connect(SWD) failed");
     try {
@@ -905,16 +938,69 @@ std::string CmsisDapClient::cpuControl(const std::string& action, uint32_t clock
         } else if (action == "run") {
             memWrite32(0xE000EDF0, 0xA05F0001);
             msg = "CPU RUNNING";
-        } else if (action == "step") {
+        } else if (action == "step_into" || action == "step") {
             memWrite32(0xE000EDF0, 0xA05F0003);
             memWrite32(0xE000EDF0, 0xA05F0005);
             uint32_t pc = readCoreReg(15);
-            msg = "CPU STEP -> PC=" + hex32(pc);
+            msg = "STEP INTO -> PC=" + hex32(pc);
+        } else if (action == "step_out") {
+            memWrite32(0xE000EDF0, 0xA05F0003);
+            uint32_t lr = readCoreReg(14);
+            uint32_t retAddr = lr & ~1U;
+            if (retAddr < 0x08000000U || retAddr >= 0x20000000U) {
+                throw std::runtime_error("Cannot Step Out: LR (" + hex32(lr) + ") is not a Flash return address");
+            }
+            uint32_t compVal = (retAddr & 0x1FFFFFFCU) | 1U | ((retAddr & 2U) ? (1U << 31) : (1U << 30));
+            memWrite32(0xE0002000, 0x00000003); // FP_CTRL: KEY | ENABLE
+            memWrite32(0xE0002008, compVal);    // FP_COMP0
+            memWrite32(0xE000EDF0, 0xA05F0001); // Run until return breakpoint
+            bool hit = false;
+            ULONGLONG t0 = GetTickCount64();
+            while (GetTickCount64() - t0 < 1500) {
+                if (memRead32(0xE000EDF0) & (1U << 17)) {
+                    hit = true;
+                    break;
+                }
+                Sleep(5);
+            }
+            if (!hit) memWrite32(0xE000EDF0, 0xA05F0003);
+            memWrite32(0xE0002008, 0x00000000);
+            memWrite32(0xE0002000, 0x00000002);
+            uint32_t pc = readCoreReg(15);
+            msg = hit ? ("STEP OUT -> PC=" + hex32(pc)) : ("STEP OUT timeout (halted @ PC=" + hex32(pc) + ")");
         } else {
             throw std::runtime_error("Unknown CPU action");
         }
         disconnect();
         return msg;
+    } catch (...) {
+        try { disconnect(); } catch (...) {}
+        throw;
+    }
+}
+
+void CmsisDapClient::swdSystemReset(uint32_t clockHz) {
+    if (connectSwd() != 1) throw std::runtime_error("DAP_Connect(SWD) failed");
+    try {
+        swjClock(clockHz);
+        transferConfigure(2, 500, 0);
+        swdConfigure(0);
+        swdLineResetToSwd();
+        readDp(0x00);
+        writeAbort(0x1E);
+        writeDp(0x08, 0);
+        writeDp(0x04, 0x50000000);
+        for (int i = 0; i < 30; ++i) {
+            if ((readDp(0x04) & 0xA0000000) == 0xA0000000) break;
+            Sleep(2);
+        }
+        uint8_t cnt = 0, ack = 0;
+        std::vector<uint32_t> vals;
+        transfer({{0x01 | 0x00, 0x23000012}}, cnt, ack, vals);
+        memWrite32(0xE000EDFC, 0x00000000); // Clear DEMCR
+        memWrite32(0xE000EDF0, 0xA05F0000); // Clear C_DEBUGEN
+        try { memWrite32(0xE000ED0C, 0x05FA0004); } catch (...) {} // AIRCR.SYSRESETREQ
+        disconnect();
     } catch (...) {
         try { disconnect(); } catch (...) {}
         throw;

@@ -2,7 +2,7 @@
 
 This repository contains the KiCad hardware, firmware, and host software for two STM32 debug probe implementations:
 
-1. **`stm32f401rct6_stlink/` (Latest - v2.1.0):** **TUE CMSIS-DAP + Virtual COM Port** probe based on **STM32F401RCT6**, paired with a lightweight **native C++17 GUI** for **Windows** and **Ubuntu**.
+1. **`stm32f401rct6_stlink/` (Latest - v1.0.0):** **TUE CMSIS-DAP + Virtual COM Port** probe based on **STM32F401RCT6**, paired with a lightweight **native C++17 GUI** for **Windows** and **Ubuntu**.
 2. **`blackmagic-firmware-v1.10.2/` & `hardware/`:** **Black Magic Probe (BMP)** clone based on **STM32F103C8T6 (Bluepill)**.
 
 ---
@@ -11,10 +11,10 @@ This repository contains the KiCad hardware, firmware, and host software for two
 
 | Folder / File | Description |
 | :--- | :--- |
-| [`stm32f401rct6_stlink/`](stm32f401rct6_stlink/firmware/README.md) | STM32F401RCT6 probe project (KiCad PCB + CMSIS-DAP/VCP Firmware + C++ GUI + Release v2.1.0) |
+| [`stm32f401rct6_stlink/`](stm32f401rct6_stlink/firmware/README.md) | STM32F401RCT6 probe project (KiCad PCB + CMSIS-DAP/VCP Firmware + C++ GUI + Release v1.0.0) |
 | [`stm32f401rct6_stlink/firmware/`](stm32f401rct6_stlink/firmware/README.md) | STM32F401RCT6 firmware source (USB Composite HID + CDC VCP, SWD, industrial status LED) |
 | [`stm32f401rct6_stlink/gui/`](stm32f401rct6_stlink/gui/main_gui.cpp) | Native C++17 GUI (Win32 API for Windows & Qt5 for Ubuntu) |
-| [`stm32f401rct6_stlink/release/v2.1.0/`](stm32f401rct6_stlink/release/v2.1.0/RELEASE_NOTES.md) | Prebuilt v2.1.0 Release binaries (STM32F401 `.bin`/`.hex`, Windows `.exe`, Ubuntu `.deb`) |
+| [`stm32f401rct6_stlink/release/v1.0.0/`](stm32f401rct6_stlink/release/v1.0.0/RELEASE_NOTES.md) | Prebuilt v1.0.0 Release binaries (STM32F401 `.bin`/`.hex`, Windows `.exe`, Ubuntu `.deb`) |
 | `blackmagic-firmware-v1.10.2/` | Black Magic Probe v1.10.2 firmware for STM32F103C8T6 |
 | `hardware/` & `Tue_BMP_Gerber/` | KiCad hardware design & Gerber files for the Bluepill BMP |
 
@@ -39,12 +39,12 @@ This repository contains the KiCad hardware, firmware, and host software for two
   * Clicking **Connect** reads the chip name, IDs, Flash size, RDP, UID, and the first 256 bytes of on-chip Flash.
   * 9 SWD clock speeds (`4 MHz` – `20 kHz`), **Memory Hex Viewer & Mem32**, and **UART Terminal** (`Echo TX`, auto-clear input, selectable `\r`, `\n`, `\t`, and `Parse \r \n \t \xHH`).
 
-### 📦 Quick Download & Install (Release v2.1.0)
-* **STM32F401RCT6 Firmware:** Flash `stm32f401rct6_stlink/release/v2.1.0/tue-cmsis-dap-stm32f401rct6-v2.1.0.bin` at `0x08000000` (via DFU or ST-Link).
-* **Windows:** Run `stm32f401rct6_stlink/release/v2.1.0/TUE_CMSIS_DAP_Windows_v2.1.0.exe` directly.
+### 📦 Quick Download & Install (Release v1.0.0)
+* **STM32F401RCT6 Firmware:** Flash `stm32f401rct6_stlink/release/v1.0.0/tue-cmsis-dap-stm32f401rct6-v1.0.0.bin` at `0x08000000` (via DFU or ST-Link).
+* **Windows:** Run `stm32f401rct6_stlink/release/v1.0.0/TUE_CMSIS_DAP_Windows_v1.0.0.exe` directly.
 * **Ubuntu / Linux:**
   ```bash
-  sudo apt install ./stm32f401rct6_stlink/release/v2.1.0/tue-cmsis-dap_2.1.0_amd64.deb
+  sudo apt install ./stm32f401rct6_stlink/release/v1.0.0/tue-cmsis-dap_1.0.0_amd64.deb
   tue-cmsis-dap
   ```
 * For detailed firmware & GUI build instructions, see [`stm32f401rct6_stlink/firmware/README.md`](stm32f401rct6_stlink/firmware/README.md).

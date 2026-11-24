@@ -28,6 +28,7 @@
 // ---------------------------------------------------------------------------
 static HINSTANCE g_hInst = nullptr;
 static HWND g_hMainWnd = nullptr;
+static HWND g_hDebugWnd = nullptr;
 static HWND g_hHexWnd = nullptr;
 static HWND g_hUartWnd = nullptr;
 static HWND g_hOcdDlg = nullptr;
@@ -45,24 +46,28 @@ static HWND g_cmbSwdSpeed = nullptr;
 static HWND g_chkUnderReset = nullptr;
 
 static HWND g_btnConnect = nullptr;
+static HWND g_btnDisconnect = nullptr;
 static HWND g_btnFlash = nullptr;
 static HWND g_btnVerify = nullptr;
-static HWND g_btnReset = nullptr;
+static HWND g_btnHwReset = nullptr;
+static HWND g_btnSwdReset = nullptr;
 static HWND g_btnErase = nullptr;
-static HWND g_btnHalt = nullptr;
-static HWND g_btnRun = nullptr;
-static HWND g_btnStep = nullptr;
-static HWND g_btnRegs = nullptr;
+static HWND g_btnOpenDebug = nullptr;
 
 static HWND g_edtFilePath = nullptr;
 static HWND g_btnBrowse = nullptr;
 static HWND g_edtBaseAddr = nullptr;
 
 static HWND g_edtTargetInfo = nullptr;
-static HWND g_edtDebugInfo = nullptr;
 static HWND g_edtLog = nullptr;
 static HWND g_progress = nullptr;
 static HWND g_btnClearLog = nullptr;
+
+// Debug Window controls
+static HWND g_dbgBtnStart = nullptr, g_dbgBtnExit = nullptr;
+static HWND g_dbgBtnHalt = nullptr, g_dbgBtnRun = nullptr;
+static HWND g_dbgBtnStepInto = nullptr, g_dbgBtnStepOut = nullptr, g_dbgBtnRegs = nullptr;
+static HWND g_dbgText = nullptr;
 
 // Hex Viewer controls
 static HWND g_hexAddr = nullptr, g_hexLen = nullptr, g_hexBtnRead = nullptr, g_hexText = nullptr;
@@ -83,6 +88,7 @@ static std::vector<HidDeviceInfo> g_hidDevices;
 static std::mutex g_hidMutex;
 static bool g_probePresent = false;
 static bool g_targetConnected = false;
+static bool g_debugActive = false;
 static std::atomic<bool> g_busy{false};
 
 static std::wstring g_ocdExePath = L"openocd";
@@ -198,6 +204,7 @@ static void appendEditText(HWND hEdit, const std::wstring& text) {
 
 static std::wstring formatHexDump(uint32_t baseAddr, const std::vector<uint8_t>& data) {
     std::wstring out;
+    out.reserve(data.size() * 5);
     wchar_t lineBuf[128];
     for (size_t off = 0; off < data.size(); off += 16) {
         size_t n = (std::min)(size_t(16), data.size() - off);
@@ -251,16 +258,26 @@ static void updateActionButtonsState() {
     bool notBusy = !g_busy.load();
     bool ocd = useOpenOcd();
 
-    EnableWindow(g_btnConnect, notBusy && (g_probePresent || ocd));
+    EnableWindow(g_btnConnect, notBusy && !g_targetConnected && (g_probePresent || ocd));
+    EnableWindow(g_btnDisconnect, canOperate);
     EnableWindow(g_btnFlash, canOperate);
     EnableWindow(g_btnVerify, canOperate);
-    EnableWindow(g_btnReset, canOperate);
+    EnableWindow(g_btnHwReset, canOperate);
+    EnableWindow(g_btnSwdReset, canOperate);
     EnableWindow(g_btnErase, canOperate);
-    EnableWindow(g_btnHalt, canOperate);
-    EnableWindow(g_btnRun, canOperate);
-    EnableWindow(g_btnStep, canOperate && !ocd);
-    EnableWindow(g_btnRegs, canOperate && !ocd);
+    EnableWindow(g_btnOpenDebug, canOperate);
     EnableWindow(g_cmbOcdTarget, ocd && notBusy);
+
+    if (g_hDebugWnd) {
+        bool dbgOp = canOperate && g_debugActive;
+        EnableWindow(g_dbgBtnStart, canOperate && !g_debugActive);
+        EnableWindow(g_dbgBtnExit, dbgOp);
+        EnableWindow(g_dbgBtnHalt, dbgOp);
+        EnableWindow(g_dbgBtnRun, dbgOp);
+        EnableWindow(g_dbgBtnStepInto, dbgOp && !ocd);
+        EnableWindow(g_dbgBtnStepOut, dbgOp && !ocd);
+        EnableWindow(g_dbgBtnRegs, dbgOp && !ocd);
+    }
 }
 
 static void refreshUsbAutoDetect(bool logChange = true) {
@@ -302,8 +319,9 @@ static void refreshUsbAutoDetect(bool logChange = true) {
         badge = L"USB: Waiting for CMSIS-DAP probe...";
         if (g_targetConnected) {
             g_targetConnected = false;
-            SetWindowTextW(g_edtTargetInfo, L"Disconnected.\r\nPlug in the programmer and click [Connect].");
-            SetWindowTextW(g_edtDebugInfo, L"CPU: Not connected.");
+            g_debugActive = false;
+            SetWindowTextW(g_edtTargetInfo, L"Disconnected.\r\nPlug in the CMSIS-DAP probe and click [Connect].");
+            if (g_dbgText) SetWindowTextW(g_dbgText, L"Debug Session: Inactive.");
         }
         if (logChange && wasPresent) {
             postLog("[USB] Programmer disconnected.");
@@ -351,15 +369,11 @@ static std::wstring formatTargetInfoText(const Stm32TargetInfo& info) {
 
     std::swprintf(
         buf, 1024,
-        L"Chip:      %ls\r\n"
-        L"DEV_ID:    0x%03X (Rev 0x%04X) | Family: %ls\r\n"
-        L"DP_IDCODE: 0x%08X | DBGMCU: 0x%08X\r\n"
-        L"Flash:     %u KB (Page/Sector: %u B) | RDP: %ls\r\n"
-        L"UID:       %ls\r\n",
-        utf8ToWide(info.name).c_str(),
-        info.devId, info.revId, utf8ToWide(info.family).c_str(),
-        info.dpId, info.dbgId,
-        info.flashKB, info.pageSize, rdpStr.c_str(),
+        L"Chip: %ls  |  DEV_ID: 0x%03X (Rev 0x%04X)  |  Family: %ls\r\n"
+        L"DP_IDCODE: 0x%08X  |  DBGMCU: 0x%08X  |  Flash: %u KB (Sector/Page: %u B)  |  RDP: %ls\r\n"
+        L"UID: %ls\r\n",
+        utf8ToWide(info.name).c_str(), info.devId, info.revId, utf8ToWide(info.family).c_str(),
+        info.dpId, info.dbgId, info.flashKB, info.pageSize, rdpStr.c_str(),
         utf8ToWide(info.uid).c_str());
 
     std::wstring out = buf;
@@ -374,8 +388,9 @@ static std::wstring formatTargetInfoText(const Stm32TargetInfo& info) {
         wchar_t vbuf[256];
         std::swprintf(
             vbuf, 256,
-            L"--- On-Chip Flash Content @ 0x08000000 ---\r\n"
-            L"Status: %ls | Init SP: 0x%08X | Reset_Handler: 0x%08X\r\n\r\n",
+            L"--- On-Chip Flash Preview (%zu bytes @ 0x08000000) ---\r\n"
+            L"Flash Status: %ls  |  Initial SP: 0x%08X  |  Reset_Handler: 0x%08X\r\n\r\n",
+            info.flashPreview.size(),
             isBlank ? L"BLANK (0xFF)" : L"PROGRAMMED",
             sp, resetVec);
         out += vbuf;
@@ -388,27 +403,24 @@ static std::wstring formatDebugStatusText(const CpuDebugStatus& st) {
     wchar_t buf[1024];
     std::swprintf(
         buf, 1024,
-        L"CPU State: %ls\r\n"
-        L"PC   = 0x%08X   SP   = 0x%08X\r\n"
-        L"LR   = 0x%08X   xPSR = 0x%08X\r\n"
-        L"R0   = 0x%08X   R1   = 0x%08X\r\n"
-        L"R2   = 0x%08X   R3   = 0x%08X\r\n"
-        L"R12  = 0x%08X   MSP  = 0x%08X\r\n"
-        L"PSP  = 0x%08X\r\n"
-        L"CFSR = 0x%08X   HFSR = 0x%08X\r\n",
-        st.halted ? L"HALTED (Debug Mode)" : L"RUNNING",
-        st.pc, st.sp,
-        st.lr, st.xpsr,
-        st.r0, st.r1,
-        st.r2, st.r3,
-        st.r12, st.msp,
-        st.psp,
+        L"Debug Session: ACTIVE   |   CPU State: %ls\r\n"
+        L"-------------------------------------------------------------\r\n"
+        L"PC   = 0x%08X     SP   = 0x%08X     LR   = 0x%08X\r\n"
+        L"xPSR = 0x%08X     MSP  = 0x%08X     PSP  = 0x%08X\r\n"
+        L"R0   = 0x%08X     R1   = 0x%08X     R2   = 0x%08X\r\n"
+        L"R3   = 0x%08X     R12  = 0x%08X\r\n"
+        L"CFSR = 0x%08X     HFSR = 0x%08X\r\n",
+        st.halted ? L"HALTED (Paused)" : L"RUNNING",
+        st.pc, st.sp, st.lr,
+        st.xpsr, st.msp, st.psp,
+        st.r0, st.r1, st.r2,
+        st.r3, st.r12,
         st.cfsr, st.hfsr);
     return buf;
 }
 
 // ---------------------------------------------------------------------------
-// Actions (Connect, Flash, Verify, Reset, Erase, Debug)
+// Main Actions (Connect, Disconnect, Flash, Verify, HW/SWD Reset, Erase)
 // ---------------------------------------------------------------------------
 static void doConnect() {
     uint32_t speed = getSwdSpeedHz();
@@ -441,12 +453,39 @@ static void doConnect() {
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
 
         CmsisDapClient dap(hid);
-        postLog("[SWD] Connecting and reading Chip ID + Flash @ 0x08000000...");
+        postLog("[SWD] Connecting and reading Chip ID + 512B Flash @ 0x08000000...");
         Stm32TargetInfo info = dap.probeTarget(speed, underReset, true);
         postLog("[SWD] Connected: " + info.name + " | Flash=" + std::to_string(info.flashKB) + " KB");
 
         auto* txt = new std::wstring(formatTargetInfoText(info));
         PostMessageW(g_hMainWnd, WM_APP_CONNECT_DONE, 1, reinterpret_cast<LPARAM>(txt));
+    });
+}
+
+static void doDisconnect() {
+    uint32_t speed = getSwdSpeedHz();
+    bool wasDebug = g_debugActive;
+    bool ocd = useOpenOcd();
+
+    runBgTask([=]() {
+        if (!ocd && g_probePresent) {
+            try {
+                HidDeviceInfo devInfo = getSelectedHidInfo();
+                WinHidDevice hid;
+                std::string err;
+                if (hid.open(devInfo, err)) {
+                    CmsisDapClient dap(hid);
+                    if (wasDebug) {
+                        dap.debugExit(speed);
+                    } else {
+                        dap.disconnect();
+                    }
+                    try { dap.hostStatus(0, false); } catch (...) {}
+                }
+            } catch (...) {}
+        }
+        postLog("[SWD] Disconnected from target.");
+        PostMessageW(g_hMainWnd, WM_APP_CONNECT_DONE, 2, 0);
     });
 }
 
@@ -558,7 +597,7 @@ static void doVerify() {
     });
 }
 
-static void doReset() {
+static void doHwReset() {
     uint32_t speed = getSwdSpeedHz();
     bool ocd = useOpenOcd();
     std::wstring ocdExe = g_ocdExePath;
@@ -577,7 +616,30 @@ static void doReset() {
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
         CmsisDapClient dap(hid);
         dap.hardResetPulse(50);
-        postLog("[SWD] Hardware Reset (nRESET) pulse sent to target.");
+        postLog("[HW RESET] Asserted nRESET pin (PB8) LOW 50ms -> HIGH.");
+    });
+}
+
+static void doSwdReset() {
+    uint32_t speed = getSwdSpeedHz();
+    bool ocd = useOpenOcd();
+    std::wstring ocdExe = g_ocdExePath;
+    std::wstring ocdCfg = getSelectedOcdTargetCfg();
+
+    runBgTask([=]() {
+        if (ocd) {
+            OpenOcdRunner::runOnce(ocdExe, ocdCfg, speed / 1000,
+                                   {L"init", L"reset_config none", L"reset run", L"exit"},
+                                   [](const std::string& l) { postLog(l); });
+            return;
+        }
+        HidDeviceInfo devInfo = getSelectedHidInfo();
+        WinHidDevice hid;
+        std::string err;
+        if (!hid.open(devInfo, err)) throw std::runtime_error(err);
+        CmsisDapClient dap(hid);
+        dap.swdSystemReset(speed);
+        postLog("[SWD RESET] Sent AIRCR.SYSRESETREQ over SWD.");
     });
 }
 
@@ -615,6 +677,41 @@ static void doErase() {
     });
 }
 
+// ---------------------------------------------------------------------------
+// Debug Actions (for dedicated Debug Window)
+// ---------------------------------------------------------------------------
+static void doDebugStart() {
+    uint32_t speed = getSwdSpeedHz();
+    bool underReset = useUnderReset();
+    runBgTask([=]() {
+        HidDeviceInfo devInfo = getSelectedHidInfo();
+        WinHidDevice hid;
+        std::string err;
+        if (!hid.open(devInfo, err)) throw std::runtime_error(err);
+        CmsisDapClient dap(hid);
+        CpuDebugStatus st = dap.debugStart(speed, underReset);
+        auto* dbgTxt = new std::wstring(formatDebugStatusText(st));
+        PostMessageW(g_hMainWnd, WM_APP_DEBUG_INFO, 1, reinterpret_cast<LPARAM>(dbgTxt));
+        postLog("[DEBUG] Debug session started (CPU halted @ PC=0x" +
+                [&]() { char b[16]; std::snprintf(b, sizeof(b), "%08X", st.pc); return std::string(b); }() + ")");
+    });
+}
+
+static void doDebugExit() {
+    uint32_t speed = getSwdSpeedHz();
+    runBgTask([=]() {
+        HidDeviceInfo devInfo = getSelectedHidInfo();
+        WinHidDevice hid;
+        std::string err;
+        if (!hid.open(devInfo, err)) throw std::runtime_error(err);
+        CmsisDapClient dap(hid);
+        dap.debugExit(speed);
+        auto* dbgTxt = new std::wstring(L"Debug Session: EXITED (CPU running freely)\r\nClick [Start Debug] to attach and halt CPU.");
+        PostMessageW(g_hMainWnd, WM_APP_DEBUG_INFO, 2, reinterpret_cast<LPARAM>(dbgTxt));
+        postLog("[DEBUG] Exited debug mode; CPU running freely.");
+    });
+}
+
 static void doCpuAction(const std::string& action) {
     uint32_t speed = getSwdSpeedHz();
     bool ocd = useOpenOcd();
@@ -636,13 +733,13 @@ static void doCpuAction(const std::string& action) {
         CmsisDapClient dap(hid);
         std::string res = dap.cpuControl(action, speed);
         postLog("[DEBUG] " + res);
-        if (action == "halt" || action == "step") {
+        if (action == "halt" || action == "step_into" || action == "step_out") {
             CpuDebugStatus st = dap.readCpuStatus(speed, false);
             auto* dbgTxt = new std::wstring(formatDebugStatusText(st));
-            PostMessageW(g_hMainWnd, WM_APP_DEBUG_INFO, 0, reinterpret_cast<LPARAM>(dbgTxt));
+            PostMessageW(g_hMainWnd, WM_APP_DEBUG_INFO, 1, reinterpret_cast<LPARAM>(dbgTxt));
         } else if (action == "run") {
-            auto* dbgTxt = new std::wstring(L"CPU State: RUNNING\r\nClick [Halt] or [Read Regs] to pause and inspect registers.");
-            PostMessageW(g_hMainWnd, WM_APP_DEBUG_INFO, 0, reinterpret_cast<LPARAM>(dbgTxt));
+            auto* dbgTxt = new std::wstring(L"Debug Session: ACTIVE   |   CPU State: RUNNING\r\nClick [Halt] or [Read Regs] to pause and inspect registers.");
+            PostMessageW(g_hMainWnd, WM_APP_DEBUG_INFO, 1, reinterpret_cast<LPARAM>(dbgTxt));
         }
     });
 }
@@ -659,7 +756,7 @@ static void doReadRegs() {
         CmsisDapClient dap(hid);
         CpuDebugStatus st = dap.readCpuStatus(speed, underReset);
         auto* dbgTxt = new std::wstring(formatDebugStatusText(st));
-        PostMessageW(g_hMainWnd, WM_APP_DEBUG_INFO, 0, reinterpret_cast<LPARAM>(dbgTxt));
+        PostMessageW(g_hMainWnd, WM_APP_DEBUG_INFO, 1, reinterpret_cast<LPARAM>(dbgTxt));
         char msg[96];
         std::snprintf(msg, sizeof(msg), "[DEBUG] PC=0x%08X SP=0x%08X LR=0x%08X xPSR=0x%08X",
                       st.pc, st.sp, st.lr, st.xpsr);
@@ -716,6 +813,74 @@ static void doDumpFlashBin() {
         f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
         postLog("[OK] Saved Flash dump (" + std::to_string(bytes.size()) + " bytes).");
     });
+}
+
+// ---------------------------------------------------------------------------
+// Tool Window 0: Dedicated Debug Window (Fixed Size)
+// ---------------------------------------------------------------------------
+static LRESULT CALLBACK DebugWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_CREATE: {
+        int x = 12;
+        g_dbgBtnStart = CreateWindowW(L"BUTTON", L"Start Debug", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+                                      x, 10, 94, 28, hwnd, reinterpret_cast<HMENU>(IDC_DBG_BTN_START), g_hInst, nullptr); x += 100;
+        g_dbgBtnExit  = CreateWindowW(L"BUTTON", L"Exit Debug", WS_CHILD | WS_VISIBLE,
+                                      x, 10, 86, 28, hwnd, reinterpret_cast<HMENU>(IDC_DBG_BTN_EXIT), g_hInst, nullptr); x += 96;
+        g_dbgBtnHalt  = CreateWindowW(L"BUTTON", L"Halt", WS_CHILD | WS_VISIBLE,
+                                      x, 10, 62, 28, hwnd, reinterpret_cast<HMENU>(IDC_DBG_BTN_HALT), g_hInst, nullptr); x += 68;
+        g_dbgBtnRun   = CreateWindowW(L"BUTTON", L"Run", WS_CHILD | WS_VISIBLE,
+                                      x, 10, 62, 28, hwnd, reinterpret_cast<HMENU>(IDC_DBG_BTN_RUN), g_hInst, nullptr); x += 68;
+        g_dbgBtnStepInto = CreateWindowW(L"BUTTON", L"Step Into", WS_CHILD | WS_VISIBLE,
+                                         x, 10, 82, 28, hwnd, reinterpret_cast<HMENU>(IDC_DBG_BTN_STEP_INTO), g_hInst, nullptr); x += 88;
+        g_dbgBtnStepOut  = CreateWindowW(L"BUTTON", L"Step Out", WS_CHILD | WS_VISIBLE,
+                                         x, 10, 82, 28, hwnd, reinterpret_cast<HMENU>(IDC_DBG_BTN_STEP_OUT), g_hInst, nullptr); x += 88;
+        g_dbgBtnRegs     = CreateWindowW(L"BUTTON", L"Read Regs", WS_CHILD | WS_VISIBLE,
+                                         x, 10, 86, 28, hwnd, reinterpret_cast<HMENU>(IDC_DBG_BTN_REGS), g_hInst, nullptr);
+
+        g_dbgText = CreateWindowExW(
+            WS_EX_CLIENTEDGE, L"EDIT",
+            L"Debug Session: Inactive.\r\nClick [Start Debug] to halt the CPU and inspect registers.",
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
+            12, 46, 628, 340, hwnd, reinterpret_cast<HMENU>(IDC_DBG_TEXT), g_hInst, nullptr);
+
+        EnumChildWindows(hwnd, [](HWND child, LPARAM) -> BOOL {
+            SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(g_fontUi), TRUE);
+            return TRUE;
+        }, 0);
+        SendMessageW(g_dbgText, WM_SETFONT, reinterpret_cast<WPARAM>(g_fontMono), TRUE);
+        return 0;
+    }
+    case WM_COMMAND: {
+        int id = LOWORD(wParam);
+        if (id == IDC_DBG_BTN_START) doDebugStart();
+        else if (id == IDC_DBG_BTN_EXIT) doDebugExit();
+        else if (id == IDC_DBG_BTN_HALT) doCpuAction("halt");
+        else if (id == IDC_DBG_BTN_RUN) doCpuAction("run");
+        else if (id == IDC_DBG_BTN_STEP_INTO) doCpuAction("step_into");
+        else if (id == IDC_DBG_BTN_STEP_OUT) doCpuAction("step_out");
+        else if (id == IDC_DBG_BTN_REGS) doReadRegs();
+        return 0;
+    }
+    case WM_CLOSE:
+        ShowWindow(hwnd, SW_HIDE);
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+static void openDebugWindow() {
+    if (!g_hDebugWnd) {
+        RECT rc{0, 0, 652, 398};
+        AdjustWindowRect(&rc, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE);
+        g_hDebugWnd = CreateWindowExW(
+            0, L"TueDebugWndClass", L"CPU Debug Session",
+            WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+            CW_USEDEFAULT, CW_USEDEFAULT, rc.right - rc.left, rc.bottom - rc.top,
+            g_hMainWnd, nullptr, g_hInst, nullptr);
+    }
+    updateActionButtonsState();
+    ShowWindow(g_hDebugWnd, SW_SHOW);
+    SetForegroundWindow(g_hDebugWnd);
 }
 
 // ---------------------------------------------------------------------------
@@ -829,7 +994,7 @@ static LRESULT CALLBACK HexWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 }
 
 // ---------------------------------------------------------------------------
-// Tool Window 2: UART Virtual COM Terminal (Fixed Size, Overlapped I/O, Auto-Clear)
+// Tool Window 2: UART Virtual COM Terminal
 // ---------------------------------------------------------------------------
 static void refreshUartComCombo() {
     if (!g_uartComCmb) return;
@@ -878,7 +1043,7 @@ static void sendUartInput() {
         return;
     }
     std::wstring wtxt = getWinText(g_uartInput);
-    SetWindowTextW(g_uartInput, L""); // Auto-clear immediately on Send/Enter
+    SetWindowTextW(g_uartInput, L"");
     SetFocus(g_uartInput);
 
     auto isChecked = [](HWND h) {
@@ -892,9 +1057,7 @@ static void sendUartInput() {
     bool parseEsc = isChecked(g_uartChkEsc);
 
     std::string payload = wideToUtf8(wtxt);
-    if (parseEsc) {
-        payload = decodeEscapeSequences(payload);
-    }
+    if (parseEsc) payload = decodeEscapeSequences(payload);
     if (addTab) payload.push_back('\t');
     if (addCr)  payload.push_back('\r');
     if (addLf)  payload.push_back('\n');
@@ -916,16 +1079,9 @@ static void sendUartInput() {
 }
 
 static LRESULT CALLBACK UartInputSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (msg == WM_GETDLGCODE) {
-        return DLGC_WANTALLKEYS;
-    }
-    if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
-        sendUartInput();
-        return 0;
-    }
-    if (msg == WM_CHAR && (wParam == L'\r' || wParam == L'\n')) {
-        return 0; // Suppress system beep
-    }
+    if (msg == WM_GETDLGCODE) return DLGC_WANTALLKEYS;
+    if (msg == WM_KEYDOWN && wParam == VK_RETURN) { sendUartInput(); return 0; }
+    if (msg == WM_CHAR && (wParam == L'\r' || wParam == L'\n')) return 0;
     return CallWindowProcW(g_origUartInputProc, hwnd, msg, wParam, lParam);
 }
 
@@ -950,20 +1106,15 @@ static LRESULT CALLBACK UartWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                                       516, 11, 86, 22, hwnd, reinterpret_cast<HMENU>(IDC_UART_CHK_ECHO), g_hInst, nullptr);
         SendMessageW(g_uartChkEcho, BM_SETCHECK, BST_CHECKED, 0);
 
-        // Row 2: Append & Escape sequence checkboxes
-        CreateWindowW(L"STATIC", L"Append:", WS_CHILD | WS_VISIBLE,
-                      12, 41, 52, 20, hwnd, nullptr, g_hInst, nullptr);
+        CreateWindowW(L"STATIC", L"Append:", WS_CHILD | WS_VISIBLE, 12, 41, 52, 20, hwnd, nullptr, g_hInst, nullptr);
         g_uartChkCr = CreateWindowW(L"BUTTON", L"\\r (CR)", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
                                     68, 39, 68, 22, hwnd, reinterpret_cast<HMENU>(IDC_UART_CHK_CR), g_hInst, nullptr);
         SendMessageW(g_uartChkCr, BM_SETCHECK, BST_CHECKED, 0);
-
         g_uartChkLf = CreateWindowW(L"BUTTON", L"\\n (LF)", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
                                     142, 39, 68, 22, hwnd, reinterpret_cast<HMENU>(IDC_UART_CHK_LF), g_hInst, nullptr);
         SendMessageW(g_uartChkLf, BM_SETCHECK, BST_CHECKED, 0);
-
         g_uartChkTab = CreateWindowW(L"BUTTON", L"\\t (TAB)", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
                                      216, 39, 76, 22, hwnd, reinterpret_cast<HMENU>(IDC_UART_CHK_TAB), g_hInst, nullptr);
-
         g_uartChkEsc = CreateWindowW(L"BUTTON", L"Parse \\r \\n \\t \\xHH", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
                                      306, 39, 165, 22, hwnd, reinterpret_cast<HMENU>(IDC_UART_CHK_ESC), g_hInst, nullptr);
         SendMessageW(g_uartChkEsc, BM_SETCHECK, BST_CHECKED, 0);
@@ -1020,11 +1171,8 @@ static LRESULT CALLBACK UartWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                     MessageBoxW(hwnd, utf8ToWide(err).c_str(), L"COM Error", MB_ICONERROR);
                 }
             }
-        } else if (id == IDC_UART_BTN_SEND) {
-            sendUartInput();
-        } else if (id == IDC_UART_BTN_CLEAR) {
-            SetWindowTextW(g_uartLog, L"");
-        }
+        } else if (id == IDC_UART_BTN_SEND) sendUartInput();
+        else if (id == IDC_UART_BTN_CLEAR) SetWindowTextW(g_uartLog, L"");
         return 0;
     }
     case WM_CLOSE:
@@ -1100,6 +1248,7 @@ static HMENU createMainMenu() {
     AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hFile), L"&File");
 
     HMENU hTools = CreatePopupMenu();
+    AppendMenuW(hTools, MF_STRING, IDM_TOOLS_DEBUG, L"CPU Debug Window...");
     AppendMenuW(hTools, MF_STRING, IDM_TOOLS_HEXVIEW, L"Memory Hex Viewer && Mem32...");
     AppendMenuW(hTools, MF_STRING, IDM_TOOLS_UART, L"UART Terminal (Virtual COM)...");
     AppendMenuW(hTools, MF_SEPARATOR, 0, nullptr);
@@ -1128,51 +1277,43 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                                  DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                                  CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
 
-        // Fixed Client Area = 900 x 600, margins = 12
-        // Row 1 (y = 10): USB status + Use OpenOCD + Target + Speed + Under Reset
+        // Row 1 (y = 10)
         g_lblUsbStatus = CreateWindowW(L"STATIC", L"USB: Scanning...", WS_CHILD | WS_VISIBLE,
                                        12, 13, 355, 20, hwnd, reinterpret_cast<HMENU>(IDC_LBL_USB_STATUS), g_hInst, nullptr);
         g_chkUseOcd = CreateWindowW(L"BUTTON", L"Use OpenOCD", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
                                     375, 11, 108, 22, hwnd, reinterpret_cast<HMENU>(IDC_CHK_USE_OCD), g_hInst, nullptr);
         g_cmbOcdTarget = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
                                        488, 10, 178, 220, hwnd, reinterpret_cast<HMENU>(IDC_CMB_OCD_TARGET), g_hInst, nullptr);
-        for (const auto& t : kOcdTargets) {
-            SendMessageW(g_cmbOcdTarget, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(t.label));
-        }
+        for (const auto& t : kOcdTargets) SendMessageW(g_cmbOcdTarget, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(t.label));
         SendMessageW(g_cmbOcdTarget, CB_SETCURSEL, 0, 0);
 
         g_cmbSwdSpeed = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
                                       674, 10, 96, 220, hwnd, reinterpret_cast<HMENU>(IDC_CMB_SWD_SPEED), g_hInst, nullptr);
-        for (const auto& s : kSwdSpeeds) {
-            SendMessageW(g_cmbSwdSpeed, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(s.label));
-        }
+        for (const auto& s : kSwdSpeeds) SendMessageW(g_cmbSwdSpeed, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(s.label));
         SendMessageW(g_cmbSwdSpeed, CB_SETCURSEL, kDefaultSpeedIdx, 0);
 
         g_chkUnderReset = CreateWindowW(L"BUTTON", L"Under Reset", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
                                         778, 11, 110, 22, hwnd, reinterpret_cast<HMENU>(IDC_CHK_UNDER_RESET), g_hInst, nullptr);
 
-        // Row 2 (y = 42): Primary Function Buttons (even spacing across 876px)
-        g_btnConnect = CreateWindowW(L"BUTTON", L"Connect", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-                                     12, 42, 94, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_CONNECT), g_hInst, nullptr);
-        g_btnFlash   = CreateWindowW(L"BUTTON", L"Flash", WS_CHILD | WS_VISIBLE,
-                                     114, 42, 86, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_FLASH), g_hInst, nullptr);
-        g_btnVerify  = CreateWindowW(L"BUTTON", L"Verify", WS_CHILD | WS_VISIBLE,
-                                     208, 42, 82, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_VERIFY), g_hInst, nullptr);
-        g_btnReset   = CreateWindowW(L"BUTTON", L"Reset", WS_CHILD | WS_VISIBLE,
-                                     298, 42, 82, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_RESET), g_hInst, nullptr);
-        g_btnErase   = CreateWindowW(L"BUTTON", L"Mass Erase", WS_CHILD | WS_VISIBLE,
-                                     388, 42, 96, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_ERASE), g_hInst, nullptr);
+        // Row 2 (y = 42): Connect, Disconnect, Flash, Verify, HW Reset, SWD Reset, Mass Erase, Debug...
+        g_btnConnect    = CreateWindowW(L"BUTTON", L"Connect", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+                                        12, 42, 92, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_CONNECT), g_hInst, nullptr);
+        g_btnDisconnect = CreateWindowW(L"BUTTON", L"Disconnect", WS_CHILD | WS_VISIBLE,
+                                        110, 42, 96, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_DISCONNECT), g_hInst, nullptr);
+        g_btnFlash      = CreateWindowW(L"BUTTON", L"Flash", WS_CHILD | WS_VISIBLE,
+                                        214, 42, 86, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_FLASH), g_hInst, nullptr);
+        g_btnVerify     = CreateWindowW(L"BUTTON", L"Verify", WS_CHILD | WS_VISIBLE,
+                                        306, 42, 82, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_VERIFY), g_hInst, nullptr);
+        g_btnHwReset    = CreateWindowW(L"BUTTON", L"HW Reset", WS_CHILD | WS_VISIBLE,
+                                        396, 42, 96, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_HW_RESET), g_hInst, nullptr);
+        g_btnSwdReset   = CreateWindowW(L"BUTTON", L"SWD Reset", WS_CHILD | WS_VISIBLE,
+                                        498, 42, 98, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_SWD_RESET), g_hInst, nullptr);
+        g_btnErase      = CreateWindowW(L"BUTTON", L"Mass Erase", WS_CHILD | WS_VISIBLE,
+                                        604, 42, 102, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_ERASE), g_hInst, nullptr);
+        g_btnOpenDebug  = CreateWindowW(L"BUTTON", L"Debug...", WS_CHILD | WS_VISIBLE,
+                                        786, 42, 102, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_OPEN_DEBUG), g_hInst, nullptr);
 
-        g_btnHalt    = CreateWindowW(L"BUTTON", L"Halt", WS_CHILD | WS_VISIBLE,
-                                     508, 42, 74, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_HALT), g_hInst, nullptr);
-        g_btnRun     = CreateWindowW(L"BUTTON", L"Run", WS_CHILD | WS_VISIBLE,
-                                     590, 42, 74, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_RUN), g_hInst, nullptr);
-        g_btnStep    = CreateWindowW(L"BUTTON", L"Step", WS_CHILD | WS_VISIBLE,
-                                     672, 42, 74, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_STEP), g_hInst, nullptr);
-        g_btnRegs    = CreateWindowW(L"BUTTON", L"Read Regs", WS_CHILD | WS_VISIBLE,
-                                     754, 42, 134, 28, hwnd, reinterpret_cast<HMENU>(IDC_BTN_REGS), g_hInst, nullptr);
-
-        // Row 3 (y = 80): Firmware File + Browse + Base Addr (tightly aligned)
+        // Row 3 (y = 80): Firmware File + Browse + Addr
         CreateWindowW(L"STATIC", L"Firmware:", WS_CHILD | WS_VISIBLE, 12, 83, 62, 20, hwnd, nullptr, g_hInst, nullptr);
         g_edtFilePath = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
                                         78, 80, 560, 24, hwnd, reinterpret_cast<HMENU>(IDC_EDT_FILE_PATH), g_hInst, nullptr);
@@ -1182,24 +1323,16 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         g_edtBaseAddr = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0x08000000", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
                                         782, 80, 106, 24, hwnd, reinterpret_cast<HMENU>(IDC_EDT_BASE_ADDR), g_hInst, nullptr);
 
-        // Center Workspace (y = 114 .. 404): Target Status & On-Chip Flash (left) + Debug CPU (right)
+        // Center Workspace (Full width 876px): Target Status & On-Chip Flash
         CreateWindowW(L"STATIC", L"Target Status && On-Chip Flash:", WS_CHILD | WS_VISIBLE,
-                      12, 114, 260, 18, hwnd, nullptr, g_hInst, nullptr);
+                      12, 114, 320, 18, hwnd, nullptr, g_hInst, nullptr);
         g_edtTargetInfo = CreateWindowExW(
             WS_EX_CLIENTEDGE, L"EDIT",
             L"Not connected.\r\nPlug in the CMSIS-DAP probe and click [Connect] to inspect chip & flash content.",
             WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
-            12, 134, 520, 270, hwnd, reinterpret_cast<HMENU>(IDC_EDT_TARGET_INFO), g_hInst, nullptr);
+            12, 134, 876, 270, hwnd, reinterpret_cast<HMENU>(IDC_EDT_TARGET_INFO), g_hInst, nullptr);
 
-        CreateWindowW(L"STATIC", L"Debug && CPU Registers:", WS_CHILD | WS_VISIBLE,
-                      542, 114, 220, 18, hwnd, nullptr, g_hInst, nullptr);
-        g_edtDebugInfo = CreateWindowExW(
-            WS_EX_CLIENTEDGE, L"EDIT",
-            L"CPU: Not connected.\r\nAfter Connect, use Halt / Run / Step / Read Regs.",
-            WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
-            542, 134, 346, 270, hwnd, reinterpret_cast<HMENU>(IDC_EDT_DEBUG_INFO), g_hInst, nullptr);
-
-        // Bottom: Progress + Clear Log + Log (y = 414 .. 590)
+        // Bottom: Progress + Clear Log + Log
         g_progress = CreateWindowExW(0, PROGRESS_CLASSW, nullptr, WS_CHILD | WS_VISIBLE | PBS_SMOOTH,
                                      12, 414, 782, 22, hwnd, reinterpret_cast<HMENU>(IDC_PROGRESS), g_hInst, nullptr);
         SendMessageW(g_progress, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
@@ -1216,7 +1349,6 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         }, 0);
         SendMessageW(g_lblUsbStatus, WM_SETFONT, reinterpret_cast<WPARAM>(g_fontUiBold), TRUE);
         SendMessageW(g_edtTargetInfo, WM_SETFONT, reinterpret_cast<WPARAM>(g_fontMono), TRUE);
-        SendMessageW(g_edtDebugInfo, WM_SETFONT, reinterpret_cast<WPARAM>(g_fontMono), TRUE);
         SendMessageW(g_edtLog, WM_SETFONT, reinterpret_cast<WPARAM>(g_fontMono), TRUE);
 
         DEV_BROADCAST_DEVICEINTERFACE_W filter{};
@@ -1226,7 +1358,7 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         g_hDevNotifyHid = RegisterDeviceNotificationW(hwnd, &filter, DEVICE_NOTIFY_WINDOW_HANDLE);
 
         refreshUsbAutoDetect(false);
-        postLog("[READY] TUE CMSIS-DAP Native C++ GUI ready. USB plug-and-play active.");
+        postLog("[READY] TUE CMSIS-DAP Native C++ GUI v1.0.0 ready. USB plug-and-play active.");
         return 0;
     }
 
@@ -1253,29 +1385,27 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         case IDC_BTN_CONNECT:
             doConnect();
             break;
+        case IDC_BTN_DISCONNECT:
+            doDisconnect();
+            break;
         case IDC_BTN_FLASH:
             doFlash();
             break;
         case IDC_BTN_VERIFY:
             doVerify();
             break;
-        case IDC_BTN_RESET:
-            doReset();
+        case IDC_BTN_HW_RESET:
+            doHwReset();
+            break;
+        case IDC_BTN_SWD_RESET:
+            doSwdReset();
             break;
         case IDC_BTN_ERASE:
             doErase();
             break;
-        case IDC_BTN_HALT:
-            doCpuAction("halt");
-            break;
-        case IDC_BTN_RUN:
-            doCpuAction("run");
-            break;
-        case IDC_BTN_STEP:
-            doCpuAction("step");
-            break;
-        case IDC_BTN_REGS:
-            doReadRegs();
+        case IDC_BTN_OPEN_DEBUG:
+        case IDM_TOOLS_DEBUG:
+            openDebugWindow();
             break;
         case IDC_BTN_BROWSE:
         case IDM_FILE_OPEN:
@@ -1348,15 +1478,16 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                         L"• Rapid Flicker (16.7 Hz): Flashing / Erasing / Verifying\n"
                         L"• Double Blink (1.0s): Target CPU Halted (Debug)\n"
                         L"• Triple Rapid Blink: SWD Error / Verify Mismatch\n\n"
-                        L"On-board Button (PA0): Press to trigger Target Hardware Reset (nRESET).",
+                        L"On-board Button (PA0): Press and hold to pull nRESET (PB8) LOW.",
                         L"LED Status Legend", MB_ICONINFORMATION);
             break;
         case IDM_HELP_ABOUT:
             MessageBoxW(hwnd,
-                        L"TUE CMSIS-DAP Native C++ Programmer v2.1\n"
+                        L"TUE CMSIS-DAP Native C++ Programmer v1.0.0\n"
                         L"Pure Win32 C++17 with USB Plug & Play auto-detection.\n"
                         L"Supports direct SWD flashing (F1/F3/F4/G4/L4) without OpenOCD,\n"
-                        L"optional OpenOCD mode, Memory Hex Viewer, and Virtual COM UART.",
+                        L"dedicated CPU Debug Window (Step Into / Step Out),\n"
+                        L"Memory Hex Viewer, and Virtual COM UART.",
                         L"About", MB_ICONINFORMATION);
             break;
         }
@@ -1381,8 +1512,14 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         if (wParam == 1) {
             g_targetConnected = true;
             if (p) SetWindowTextW(g_edtTargetInfo, p->c_str());
+        } else if (wParam == 2) {
+            g_targetConnected = false;
+            g_debugActive = false;
+            SetWindowTextW(g_edtTargetInfo, L"Disconnected.\r\nClick [Connect] to inspect chip & flash content.");
+            if (g_dbgText) SetWindowTextW(g_dbgText, L"Debug Session: Inactive.");
         } else {
             g_targetConnected = false;
+            g_debugActive = false;
             SetWindowTextW(g_edtTargetInfo, L"Connection failed. Check SWD wiring and target power.");
         }
         updateActionButtonsState();
@@ -1395,7 +1532,10 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
 
     case WM_APP_DEBUG_INFO: {
         std::unique_ptr<std::wstring> p(reinterpret_cast<std::wstring*>(lParam));
-        if (p) SetWindowTextW(g_edtDebugInfo, p->c_str());
+        if (wParam == 1) g_debugActive = true;
+        else if (wParam == 2) g_debugActive = false;
+        if (p && g_dbgText) SetWindowTextW(g_dbgText, p->c_str());
+        updateActionButtonsState();
         return 0;
     }
     case WM_APP_HEX_DATA: {
@@ -1411,9 +1551,7 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
     }
     case WM_APP_UART_RX: {
         std::unique_ptr<std::string> p(reinterpret_cast<std::string*>(lParam));
-        if (p && g_uartLog) {
-            appendEditText(g_uartLog, normalizeCrLf(utf8ToWide(*p)));
-        }
+        if (p && g_uartLog) appendEditText(g_uartLog, normalizeCrLf(utf8ToWide(*p)));
         return 0;
     }
     case WM_APP_UART_CLOSED:
@@ -1449,6 +1587,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
         hInstance, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 16, 16, LR_SHARED));
     RegisterClassExW(&wcMain);
 
+    WNDCLASSEXW wcDbg = wcMain;
+    wcDbg.lpfnWndProc = DebugWndProc;
+    wcDbg.lpszClassName = L"TueDebugWndClass";
+    RegisterClassExW(&wcDbg);
+
     WNDCLASSEXW wcHex = wcMain;
     wcHex.lpfnWndProc = HexWndProc;
     wcHex.lpszClassName = L"TueHexViewerClass";
@@ -1464,13 +1607,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     wcOcd.lpszClassName = L"TueOcdCfgClass";
     RegisterClassExW(&wcOcd);
 
-    // Fixed window size for clean 900 x 600 client area
     DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
     RECT rc{0, 0, 900, 600};
     AdjustWindowRect(&rc, style, TRUE);
 
     g_hMainWnd = CreateWindowExW(
-        0, L"TueDapMainClass", L"TUE CMSIS-DAP Programmer & Debugger",
+        0, L"TueDapMainClass", L"TUE CMSIS-DAP Programmer & Debugger v1.0.0",
         style, CW_USEDEFAULT, CW_USEDEFAULT, rc.right - rc.left, rc.bottom - rc.top,
         nullptr, createMainMenu(), hInstance, nullptr);
 

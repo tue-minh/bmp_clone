@@ -480,6 +480,13 @@ void LinuxCmsisDap::memWrite32(uint32_t addr, uint32_t val) {
     if (ack != 1) throw std::runtime_error("memWrite32 failed at " + hex32(addr));
 }
 
+void LinuxCmsisDap::memWrite64(uint32_t addr, uint32_t w0, uint32_t w1) {
+    uint8_t cnt = 0, ack = 0;
+    std::vector<uint32_t> vals;
+    transfer({{0x05, addr}, {0x0D, w0}, {0x05, addr + 4}, {0x0D, w1}}, cnt, ack, vals);
+    if (ack != 1) throw std::runtime_error("memWrite64 failed at " + hex32(addr));
+}
+
 void LinuxCmsisDap::memWrite16Batch(uint32_t startAddr, const std::vector<uint16_t>& halfwords) {
     uint8_t cnt = 0, ack = 0;
     std::vector<uint32_t> vals;
@@ -736,13 +743,15 @@ void LinuxCmsisDap::flashF2F4(uint32_t baseAddr, const std::vector<uint8_t>& pad
         }
         if (cb) cb("erase", static_cast<uint32_t>(sectors.size()), static_cast<uint32_t>(sectors.size()));
         memWrite32(CR, (1U << 0) | (2U << 8));
-        std::vector<uint32_t> words(padded.size() / 4);
-        for (size_t i = 0; i < words.size(); ++i) words[i] = getLE32(&padded[i * 4]);
-        for (size_t off = 0; off < words.size(); off += 128) {
-            size_t cnt = std::min(size_t(128), words.size() - off);
-            memWriteBlock(baseAddr + static_cast<uint32_t>(off * 4), std::vector<uint32_t>(words.begin() + off, words.begin() + off + cnt));
+        uint32_t totalBytes = static_cast<uint32_t>(padded.size());
+        for (uint32_t off = 0; off < totalBytes; off += 4) {
+            uint32_t w = getLE32(&padded[off]);
+            uint32_t addr = baseAddr + off;
+            memWrite32(addr, w);
             waitFlashReady(SR, 1U << 16, 0x1F2, 1, 500);
-            if (cb) cb("program", static_cast<uint32_t>((off + cnt) * 4), static_cast<uint32_t>(padded.size()));
+            if (cb && ((off & 0x7FF) == 0 || off + 4 >= totalBytes)) {
+                cb("program", off + 4, totalBytes);
+            }
         }
         memWrite32(CR, 1U << 31);
     } catch (...) {
@@ -772,13 +781,16 @@ void LinuxCmsisDap::flashG4L4(uint32_t baseAddr, const std::vector<uint8_t>& pad
         }
         if (cb) cb("erase", numPages, numPages);
         memWrite32(CR, 1U << 0);
-        std::vector<uint32_t> words(padded.size() / 4);
-        for (size_t i = 0; i < words.size(); ++i) words[i] = getLE32(&padded[i * 4]);
-        for (size_t off = 0; off < words.size(); off += 128) {
-            size_t cnt = std::min(size_t(128), words.size() - off);
-            memWriteBlock(baseAddr + static_cast<uint32_t>(off * 4), std::vector<uint32_t>(words.begin() + off, words.begin() + off + cnt));
+        uint32_t totalBytes = static_cast<uint32_t>(padded.size());
+        for (uint32_t off = 0; off < totalBytes; off += 8) {
+            uint32_t w0 = getLE32(&padded[off]);
+            uint32_t w1 = getLE32(&padded[off + 4]);
+            uint32_t addr = baseAddr + off;
+            memWrite64(addr, w0, w1);
             waitFlashReady(SR, 1U << 16, 0x3FA, 1, 500);
-            if (cb) cb("program", static_cast<uint32_t>((off + cnt) * 4), static_cast<uint32_t>(padded.size()));
+            if (cb && ((off & 0x7FF) == 0 || off + 8 >= totalBytes)) {
+                cb("program", off + 8, totalBytes);
+            }
         }
         memWrite32(CR, 1U << 31);
     } catch (...) {

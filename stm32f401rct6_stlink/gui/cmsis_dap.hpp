@@ -64,6 +64,7 @@ public:
     void writeDp(uint8_t addr, uint32_t val);
     uint32_t memRead32(uint32_t addr);
     void memWrite32(uint32_t addr, uint32_t val);
+    void memWrite64(uint32_t addr, uint32_t w0, uint32_t w1);
     void memWrite16Batch(uint32_t startAddr, const std::vector<uint16_t>& halfwords);
     void memWriteBlock(uint32_t addr, const std::vector<uint32_t>& words);
     std::vector<uint32_t> memReadBlock(uint32_t addr, uint32_t count);

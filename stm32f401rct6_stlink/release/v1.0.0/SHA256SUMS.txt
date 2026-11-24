@@ -1,5 +1,5 @@
 ﻿8cb6935183cdb4210346d2774ee0de8d37e6f652fdc13cac433e2ef928a15494  tue-cmsis-dap-stm32f401rct6-v1.0.0.bin
 a1423421f07f041697b010d4b1db47ebe63225e5b4c82e973f50c8f34940f772  tue-cmsis-dap-stm32f401rct6-v1.0.0.hex
-e1bbfabde8aebe1ae33922dfab8420f962271adcc6dd2bca5d7ebe0715defde2  TUE_CMSIS_DAP_Windows_v1.0.0.exe
-7c0dff5ad5078290472fe252c750aa4fd08cd0a4bb7ac698d055280602953524  tue-cmsis-dap-ubuntu-x86_64
-73017e716233af43fea5e55c1042b825976ca0063f001e2c0e1eca66c66906c7  tue-cmsis-dap_1.0.0_amd64.deb
+b4b01b65387a3a44a248ac588638ac2ce54db5b3a061cc4ea7bbfc3259e2f6a5  TUE_CMSIS_DAP_Windows_v1.0.0.exe
+62c735f5707c4b26fee03a27b321c070cfbafb60345d7cdc9d90d8375cb55884  tue-cmsis-dap-ubuntu-x86_64
+396c7f9843d6c6b9b7b5ca5414ef7fc789230513797e2c9f3b6ef75ed967c8e1  tue-cmsis-dap_1.0.0_amd64.deb

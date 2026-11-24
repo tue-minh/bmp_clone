@@ -5,7 +5,7 @@
 - **`.hex`:** `tue-cmsis-dap-stm32f401rct6-v1.0.0.hex`
 - **Highlights:**
   - USB Composite: CMSIS-DAP v1.10 HID (`VID=0x0483, PID=0x5752`) + Virtual COM Port (`USART1` `PA9/PB7`).
-  - Industrial status LED (`PC13`): Heartbeat Idle, Solid Connected, Flicker Flashing, Double Blink Debug Halted, Triple Blink Error.
+  - Industrial status LED (`PC13`): Single Blink when idle/unconnected, Double Blink when connected to a target, Solid ON during Debug mode (with 3-pulse blink upon executing debug commands), and continuous rapid flicker during flashing/erasing/verifying/target actions until completed.
   - Direct non-blocking hold-to-reset button (`PA0` -> `PB8 nRESET` with internal pull-up).
 
 ## 2. Windows App (Native C++17 Win32)

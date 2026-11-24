@@ -35,6 +35,7 @@ static const char kProductStr[] = "TUE CMSIS-DAP";
 static const char kFwVerStr[]   = "1.10";
 
 static uint8_t  s_debugPort = DAP_PORT_DISABLED;
+static bool     s_hostTargetConnected = false;
 static uint32_t s_matchMask = 0x00000000UL;
 static uint8_t  s_hidClassId = 0U;
 
@@ -167,12 +168,13 @@ static uint32_t dapHostStatus(const uint8_t *req, uint8_t *resp)
   if (type == 0U)
   {
     /* Type 0: Connect LED - Connected (Double blink) or Idle (Single blink) */
-    ledStatusSetState((status != 0U) ? LED_STATE_CONNECTED : LED_STATE_IDLE);
+    s_hostTargetConnected = (status != 0U);
+    ledStatusSetState(s_hostTargetConnected ? LED_STATE_CONNECTED : LED_STATE_IDLE);
   }
   else if (type == 1U)
   {
     /* Type 1: Flashing / Erasing / Verifying busy (Nháy liên tục đến khi xong) */
-    ledStatusSetState((status != 0U) ? LED_STATE_BUSY_FLASHING : LED_STATE_CONNECTED);
+    ledStatusSetState((status != 0U) ? LED_STATE_BUSY_FLASHING : (s_hostTargetConnected ? LED_STATE_CONNECTED : LED_STATE_IDLE));
   }
   else if (type == 2U)
   {
@@ -187,7 +189,7 @@ static uint32_t dapHostStatus(const uint8_t *req, uint8_t *resp)
     }
     else
     {
-      ledStatusSetState(LED_STATE_CONNECTED);
+      ledStatusSetState(s_hostTargetConnected ? LED_STATE_CONNECTED : LED_STATE_IDLE);
     }
   }
   resp[0] = DAP_OK;
@@ -206,7 +208,10 @@ static uint32_t dapConnect(const uint8_t *req, uint8_t *resp)
   {
     s_debugPort = DAP_PORT_SWD;
     swdInit();
-    ledStatusSetState(LED_STATE_CONNECTED);
+    if (ledStatusGetState() != LED_STATE_DEBUG && ledStatusGetState() != LED_STATE_BUSY_FLASHING)
+    {
+      ledStatusSetState(LED_STATE_CONNECTED);
+    }
     resp[0] = DAP_PORT_SWD;
   }
   else
@@ -220,7 +225,10 @@ static uint32_t dapDisconnect(uint8_t *resp)
 {
   s_debugPort = DAP_PORT_DISABLED;
   swdRelease();
-  ledStatusSetState(LED_STATE_IDLE);
+  if (!s_hostTargetConnected && ledStatusGetState() != LED_STATE_DEBUG)
+  {
+    ledStatusSetState(LED_STATE_IDLE);
+  }
   resp[0] = DAP_OK;
   return (0U << 16U) | 1U;
 }

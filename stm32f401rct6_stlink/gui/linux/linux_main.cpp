@@ -541,7 +541,9 @@ int main(int argc, char* argv[]) {
             LinuxHidDevice hid; std::string err;
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
+            try { dap.hostStatus(1, 1); } catch (...) {}
             dap.hardResetPulse(50);
+            try { dap.hostStatus(0, 1); } catch (...) {}
             postLog("[HW RESET] Asserted nRESET pin (PB8) LOW 50ms -> HIGH.");
         });
     });
@@ -554,7 +556,9 @@ int main(int argc, char* argv[]) {
             LinuxHidDevice hid; std::string err;
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
+            try { dap.hostStatus(1, 1); } catch (...) {}
             dap.swdSystemReset(speed);
+            try { dap.hostStatus(0, 1); } catch (...) {}
             postLog("[SWD RESET] Sent AIRCR.SYSRESETREQ over SWD.");
         });
     });
@@ -717,6 +721,7 @@ int main(int argc, char* argv[]) {
                 LinuxHidDevice hid; std::string err;
                 if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
                 LinuxCmsisDap dap(hid);
+                try { dap.hostStatus(1, 1); } catch (...) {}
                 if (dap.connectSwd() != 1) throw std::runtime_error("DAP_Connect failed");
                 dap.swjClock(speed); dap.transferConfigure(2, 500, 0); dap.swdConfigure(0);
                 dap.swdLineResetToSwd(); dap.readDp(0); dap.writeAbort(0x1E); dap.writeDp(8, 0); dap.writeDp(4, 0x50000000);
@@ -725,6 +730,7 @@ int main(int argc, char* argv[]) {
                 dap.transfer({{0x01, 0x23000012}}, c, a, v);
                 dap.memWrite32(addr, val);
                 dap.disconnect();
+                try { dap.hostStatus(0, 1); } catch (...) {}
                 postLog(QString("[MEM32] Wrote [0x%1] = 0x%2").arg(addr, 8, 16, QChar('0')).arg(val, 8, 16, QChar('0')));
             });
         });

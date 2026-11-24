@@ -620,7 +620,9 @@ static void doHwReset() {
         std::string err;
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
         CmsisDapClient dap(hid);
+        try { dap.hostStatus(1, true); } catch (...) {}
         dap.hardResetPulse(50);
+        try { dap.hostStatus(0, true); } catch (...) {}
         postLog("[HW RESET] Asserted nRESET pin (PB8) LOW 50ms -> HIGH.");
     });
 }
@@ -643,7 +645,9 @@ static void doSwdReset() {
         std::string err;
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
         CmsisDapClient dap(hid);
+        try { dap.hostStatus(1, true); } catch (...) {}
         dap.swdSystemReset(speed);
+        try { dap.hostStatus(0, true); } catch (...) {}
         postLog("[SWD RESET] Sent AIRCR.SYSRESETREQ over SWD.");
     });
 }
@@ -974,6 +978,7 @@ static LRESULT CALLBACK HexWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 std::string err;
                 if (!hid.open(devInfo, err)) throw std::runtime_error(err);
                 CmsisDapClient dap(hid);
+                try { dap.hostStatus(1, true); } catch (...) {}
                 if (dap.connectSwd() != 1) throw std::runtime_error("DAP_Connect failed");
                 dap.swjClock(speed);
                 dap.transferConfigure(2, 500, 0);
@@ -992,6 +997,7 @@ static LRESULT CALLBACK HexWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 dap.transfer({{0x01, 0x23000012}}, c, a, v);
                 dap.memWrite32(addr, val);
                 dap.disconnect();
+                try { dap.hostStatus(0, true); } catch (...) {}
                 char msg[96];
                 std::snprintf(msg, sizeof(msg), "[MEM32] Wrote [0x%08X] = 0x%08X", addr, val);
                 postLog(msg);

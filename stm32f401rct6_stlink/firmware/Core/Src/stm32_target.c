@@ -9,6 +9,7 @@
 
 #include "stm32_target.h"
 #include "swd.h"
+#include "led_status.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -380,9 +381,11 @@ bool stm32TargetProbe(Stm32TargetInfo_t *info, char *err, size_t errLen)
 {
   if (!stm32TargetConnect(info, err, errLen))
   {
+    ledStatusSetErrorTemporary(2000U);
     return false;
   }
   releaseTarget(true);
+  ledStatusSetState(LED_STATE_CONNECTED);
   return true;
 }
 
@@ -393,8 +396,10 @@ bool stm32TargetHalt(char *err, size_t errLen)
   {
     SETERR("Failed to halt target (%s)", swdErrorStr(swdLastError()));
     swdRelease();
+    ledStatusSetErrorTemporary(2000U);
     return false;
   }
+  ledStatusSetState(LED_STATE_DEBUG_HALTED);
   return true;
 }
 
@@ -405,14 +410,17 @@ bool stm32TargetResume(char *err, size_t errLen)
   {
     SETERR("SWD connect failed (%s)", swdErrorStr(swdLastError()));
     swdRelease();
+    ledStatusSetErrorTemporary(2000U);
     return false;
   }
   releaseTarget(true);
+  ledStatusSetState(LED_STATE_CONNECTED);
   return true;
 }
 
 bool stm32TargetReset(char *err, size_t errLen)
 {
+  ledStatusActivityPulse();
   swdInit();
   if (swdConnect() && swdPowerUp())
   {
@@ -673,6 +681,7 @@ bool stm32TargetFlashBuffer(uint32_t flashAddr,
   Stm32TargetInfo_t info;
   if (!stm32TargetConnect(&info, err, errLen))
   {
+    ledStatusSetErrorTemporary(2000U);
     return false;
   }
 
@@ -680,6 +689,7 @@ bool stm32TargetFlashBuffer(uint32_t flashAddr,
   {
     SETERR("Target RDP protection active (0x%02X)", info.rdpLevel);
     releaseTarget(true);
+    ledStatusSetErrorTemporary(3000U);
     return false;
   }
 
@@ -688,8 +698,12 @@ bool stm32TargetFlashBuffer(uint32_t flashAddr,
     SETERR("Image %lu B exceeds target flash %lu KB",
            (unsigned long)length, (unsigned long)info.flashSizeKB);
     releaseTarget(true);
+    ledStatusSetErrorTemporary(3000U);
     return false;
   }
+
+  /* Set Busy / Flashing state for industrial LED indication */
+  ledStatusSetState(LED_STATE_BUSY_FLASHING);
 
   bool ok = false;
   switch (info.family)
@@ -710,6 +724,7 @@ bool stm32TargetFlashBuffer(uint32_t flashAddr,
       SETERR("Standalone flash driver not configured for DEV_ID 0x%03X (use USB CMSIS-DAP)",
              info.devId);
       releaseTarget(true);
+      ledStatusSetErrorTemporary(3000U);
       return false;
   }
 
@@ -718,6 +733,7 @@ bool stm32TargetFlashBuffer(uint32_t flashAddr,
     /* Verify written words */
     for (uint32_t off = 0U; off < length; off += 4U)
     {
+      ledStatusActivityPulse();
       uint32_t want = 0xFFFFFFFFUL;
       uint32_t got  = 0U;
       uint32_t rem  = length - off;
@@ -736,10 +752,12 @@ bool stm32TargetFlashBuffer(uint32_t flashAddr,
   {
     if (progress != NULL) progress("verify", length, length);
     stm32TargetReset(err, errLen);
+    ledStatusSetState(LED_STATE_CONNECTED);
   }
   else
   {
     releaseTarget(true);
+    ledStatusSetErrorTemporary(3000U);
   }
 
   return ok;

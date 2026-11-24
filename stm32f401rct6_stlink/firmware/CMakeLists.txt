@@ -48,6 +48,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/swd.c
     Core/Src/dap.c
     Core/Src/stm32_target.c
+    Core/Src/led_status.c
     USB_DEVICE/App/usbd_cdc_if.c
 )
 

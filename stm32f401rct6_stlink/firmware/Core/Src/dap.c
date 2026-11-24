@@ -10,6 +10,7 @@
 #include "dap.h"
 #include "swd.h"
 #include "main.h"
+#include "led_status.h"
 #include "usb_device.h"
 #include "usbd_customhid.h"
 #include <string.h>
@@ -163,11 +164,15 @@ static uint32_t dapHostStatus(const uint8_t *req, uint8_t *resp)
 {
   uint8_t type   = req[0];
   uint8_t status = req[1];
-  if (type == 0U || type == 1U)
+  if (type == 0U)
   {
-    /* PC13 LED active low on typical STM32 boards; toggle according to status */
-    HAL_GPIO_WritePin(MCU_LED_GPIO_Port, MCU_LED_Pin,
-                      (status != 0U) ? GPIO_PIN_RESET : GPIO_PIN_SET);
+    /* Type 0: Connect LED - Host debugger is connected/active */
+    ledStatusSetState((status != 0U) ? LED_STATE_CONNECTED : LED_STATE_IDLE);
+  }
+  else if (type == 1U)
+  {
+    /* Type 1: Running LED - Target CPU is Running (1) or Halted (0) */
+    ledStatusSetState((status != 0U) ? LED_STATE_CONNECTED : LED_STATE_DEBUG_HALTED);
   }
   resp[0] = DAP_OK;
   return (2U << 16U) | 1U;
@@ -185,7 +190,7 @@ static uint32_t dapConnect(const uint8_t *req, uint8_t *resp)
   {
     s_debugPort = DAP_PORT_SWD;
     swdInit();
-    HAL_GPIO_WritePin(MCU_LED_GPIO_Port, MCU_LED_Pin, GPIO_PIN_RESET);
+    ledStatusSetState(LED_STATE_CONNECTED);
     resp[0] = DAP_PORT_SWD;
   }
   else
@@ -199,7 +204,7 @@ static uint32_t dapDisconnect(uint8_t *resp)
 {
   s_debugPort = DAP_PORT_DISABLED;
   swdRelease();
-  HAL_GPIO_WritePin(MCU_LED_GPIO_Port, MCU_LED_Pin, GPIO_PIN_SET);
+  ledStatusSetState(LED_STATE_IDLE);
   resp[0] = DAP_OK;
   return (0U << 16U) | 1U;
 }
@@ -426,6 +431,15 @@ static uint32_t dapTransfer(const uint8_t *req, uint8_t *resp)
   respPtr[0] = respCount;
   respPtr[1] = respVal;
 
+  if (respVal != DAP_TRANSFER_OK)
+  {
+    ledStatusSetErrorTemporary(1000U);
+  }
+  else
+  {
+    ledStatusActivityPulse();
+  }
+
   return ((uint32_t)(reqPtr - req) << 16U) | (uint32_t)(respBody - respPtr);
 }
 
@@ -529,6 +543,16 @@ static uint32_t dapTransferBlock(const uint8_t *req, uint8_t *resp)
 end_block:
   writeLE16(&respPtr[0], respCount);
   respPtr[2] = respVal;
+
+  if (respVal != DAP_TRANSFER_OK)
+  {
+    ledStatusSetErrorTemporary(1000U);
+  }
+  else
+  {
+    ledStatusActivityPulse();
+  }
+
   return ((uint32_t)(reqPtr - req) << 16U) | (uint32_t)(respBody - respPtr);
 }
 
@@ -778,8 +802,7 @@ void DAP_Init(void)
   s_rxReadIdx  = 0U;
   s_rxCount    = 0U;
   s_rxPaused   = false;
-  /* LED PC13 OFF initially (HIGH) */
-  HAL_GPIO_WritePin(MCU_LED_GPIO_Port, MCU_LED_Pin, GPIO_PIN_SET);
+  ledStatusInit();
 }
 
 bool DAP_CanAcceptPacket(void)

@@ -52,24 +52,44 @@ firmware/
 │   │   ├── main.h            # Định nghĩa nhãn GPIO từ CubeMX
 │   │   ├── swd.h             # API giao thức SWD ADIv5 & bit-level primitives
 │   │   ├── dap.h             # API giao thức ARM CMSIS-DAP v1.10
+│   │   ├── led_status.h      # Bộ điều khiển LED trạng thái chuẩn công nghiệp
 │   │   └── stm32_target.h    # API nhận diện & nạp Flash đa dòng (F1/F3/F4/G4/L4)
 │   └── Src/
-│       ├── main.c            # Khởi tạo hệ thống, vòng lặp DAP_Task() + UART CLI + Button
+│       ├── main.c            # Khởi tạo hệ thống, vòng lặp DAP_Task() + CDC_UART_Task() + Button
 │       ├── swd.c             # Driver SWD thanh ghi (PA4/PB4/PB8) + DWT timing
 │       ├── dap.c             # Xử lý toàn bộ tập lệnh CMSIS-DAP v1.10
+│       ├── led_status.c      # State machine LED non-blocking (Heartbeat, Connected, Flash, Debug, Error)
 │       └── stm32_target.c    # Bảng DEV_ID & thuật toán Flash đa dòng STM32
 ├── USB_DEVICE/
 │   ├── App/
 │   │   ├── usbd_desc.c           # USB Descriptor ("TUE CMSIS-DAP")
-│   │   └── usbd_custom_hid_if.c  # HID Report Descriptor 27-byte (64B IN/OUT) & callback
+│   │   ├── usbd_custom_hid_if.c  # HID Report Descriptor 27-byte (64B IN/OUT) & callback
+│   │   └── usbd_cdc_if.c         # Cầu nối USB Virtual COM Port <-> USART1 (PA9/PB7)
 │   └── Target/
-│       └── usbd_conf.h           # Cấu hình EP1 IN/OUT 64-byte, bInterval = 1 ms
+│       └── usbd_conf.h           # Cấu hình Composite HID (EP1) + CDC Data (EP2) + CDC Cmd (EP3)
 └── CMakeLists.txt
 ```
 
 ---
 
-## 4. Hướng dẫn Biên dịch (Build)
+## 4. Hệ thống LED trạng thái & Nút bấm chuẩn Công nghiệp
+
+Được điều khiển qua LED tích hợp `PC13` (`MCU_LED`, Active LOW) với bộ state-machine hoàn toàn non-blocking:
+
+| Trạng thái | Kiểu chớp LED | Ý nghĩa / Ứng dụng |
+| :--- | :--- | :--- |
+| **IDLE (Standby)** | **Heartbeat nhịp tim kép** (2 nhịp chớp ngắn mỗi 1.2s) | Mạch nạp hoạt động tốt, sẵn sàng nhận kết nối từ PC/Debugger. |
+| **CONNECTED** | **Sáng liên tục (Solid ON)** | Debugger PC (OpenOCD, Keil, GUI) đã mở phiên SWD hoặc target đã kết nối. |
+| **BUSY / FLASHING** | **Flicker cực nhanh (16.7 Hz, 30ms)** | Đang xóa chip, nạp flash binary, verify hoặc truyền gói SWD dày đặc. |
+| **DEBUG / HALTED** | **Double Blink (Nháy kép 1000ms)** | CPU target đang bị Halted / dừng ở Breakpoint trong phiên Debug. |
+| **ERROR** | **3 chớp dồn dập (Triple blink)** | Lỗi giao tiếp SWD, mất ACK, timeout hoặc Verify mismatch. |
+
+### Chức năng Nút bấm trên mạch (`PA0` / `MCU_BUTTON`):
+* **Target Hardware Reset & Probe**: Khi nhấn nút `PA0`, mạch nạp sẽ kéo chân `PB8` (`nRESET`) xuống mức thấp để kích hoạt Hardware Reset target, đồng thời probe nhanh kết nối SWD và chớp xung LED báo hiệu.
+
+---
+
+## 5. Hướng dẫn Biên dịch (Build)
 
 Dự án sử dụng **CMake** (chuẩn sinh từ STM32CubeMX):
 

@@ -30,6 +30,7 @@
 #include "swd.h"
 #include "dap.h"
 #include "stm32_target.h"
+#include "led_status.h"
 #include "usbd_cdc_if.h"
 /* USER CODE END Includes */
 
@@ -161,7 +162,8 @@ static void processCliCommand(char *cmd)
 
 static void serviceButtonAndCli(void)
 {
-  /* PA0 (MCU_BUTTON, active LOW with internal pull-up): short press -> toggle LED */
+  /* PA0 (MCU_BUTTON, active LOW with internal pull-up):
+   * Industrial Button Action -> Target Hardware Reset & Link Probe */
   static uint8_t  lastBtn = GPIO_PIN_SET;
   static uint32_t lastDebounceMs = 0U;
   uint8_t rawBtn = (uint8_t)HAL_GPIO_ReadPin(MCU_BUTTON_GPIO_Port, MCU_BUTTON_Pin);
@@ -173,7 +175,27 @@ static void serviceButtonAndCli(void)
     lastBtn = rawBtn;
     if (rawBtn == GPIO_PIN_RESET)
     {
-      HAL_GPIO_TogglePin(MCU_LED_GPIO_Port, MCU_LED_Pin);
+      ledStatusActivityPulse();
+      /* Kéo xung phần cứng nRESET qua PB8 */
+      swdHardResetPulse(60U, 30U);
+
+      if (!DAP_IsConnected())
+      {
+        uint32_t dpId = 0U;
+        if (stm32TargetCheckLink(&dpId))
+        {
+          printf("[BUTTON] Hardware Reset Target OK! DP_IDCODE=0x%08lX\r\n", (unsigned long)dpId);
+          ledStatusSetState(LED_STATE_CONNECTED);
+        }
+        else
+        {
+          printf("[BUTTON] Target Hardware Reset (nRST) pulse generated\r\n");
+        }
+      }
+      else
+      {
+        printf("[BUTTON] Target Hardware Reset pulse sent during active DAP session\r\n");
+      }
     }
   }
   (void)s_cliLine;
@@ -224,6 +246,7 @@ int main(void)
     DAP_Task();
     CDC_UART_Task();
     serviceButtonAndCli();
+    ledStatusUpdate();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

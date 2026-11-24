@@ -43,7 +43,7 @@ public:
     explicit CmsisDapClient(WinHidDevice& dev) : dev_(dev) {}
 
     std::string infoStr(uint8_t infoId);
-    void hostStatus(uint8_t ledType, bool on);
+    void hostStatus(uint8_t ledType, uint8_t status);
     uint8_t connectSwd();
     void disconnect();
     void swjClock(uint32_t hz);

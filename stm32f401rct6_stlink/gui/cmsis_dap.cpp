@@ -122,8 +122,8 @@ std::string CmsisDapClient::infoStr(uint8_t infoId) {
     return s;
 }
 
-void CmsisDapClient::hostStatus(uint8_t ledType, bool on) {
-    cmd({ID_DAP_HOST_STATUS, ledType, static_cast<uint8_t>(on ? 1 : 0)});
+void CmsisDapClient::hostStatus(uint8_t ledType, uint8_t status) {
+    cmd({ID_DAP_HOST_STATUS, ledType, status});
 }
 
 uint8_t CmsisDapClient::connectSwd() {

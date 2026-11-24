@@ -438,6 +438,7 @@ int main(int argc, char* argv[]) {
             LinuxCmsisDap dap(hid);
             postLog("[SWD] Connecting and reading Chip ID + 512B Flash @ 0x08000000...");
             auto info = dap.probeTarget(speed, underReset, true);
+            try { dap.hostStatus(0, 1); } catch (...) {}
             postLog(QString("[SWD] Connected: %1 | Flash=%2 KB").arg(QString::fromStdString(info.name)).arg(info.flashKB));
             QString txt = formatTargetText(info);
             QMetaObject::invokeMethod(winPtr, [&, txt]() {
@@ -460,6 +461,7 @@ int main(int argc, char* argv[]) {
                         LinuxCmsisDap dap(hid);
                         if (wasDbg) dap.debugExit(speed);
                         else dap.disconnect();
+                        try { dap.hostStatus(0, 0); } catch (...) {}
                     }
                 } catch (...) {}
             }
@@ -495,6 +497,7 @@ int main(int argc, char* argv[]) {
             LinuxHidDevice hid; std::string err;
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
+            try { dap.hostStatus(1, 1); } catch (...) {}
             auto info = dap.flashImage(img.baseAddr, img.data, speed, underReset, true,
                 [&](const std::string& st, uint32_t done, uint32_t tot) {
                     int pct = tot ? (st == "erase" ? 15 * done / tot : st == "program" ? 15 + 65 * done / tot : 80 + 20 * done / tot) : 0;
@@ -502,6 +505,7 @@ int main(int argc, char* argv[]) {
                 });
             postLog(QString("[OK] Flashed & verified %1 bytes on %2!").arg(img.data.size()).arg(QString::fromStdString(info.name)));
             auto refreshed = dap.probeTarget(speed, false, true);
+            try { dap.hostStatus(0, 1); } catch (...) {}
             QString txt = formatTargetText(refreshed);
             QMetaObject::invokeMethod(winPtr, [&, txt]() { edtTarget->setPlainText(txt); }, Qt::QueuedConnection);
         });
@@ -518,11 +522,13 @@ int main(int argc, char* argv[]) {
             LinuxHidDevice hid; std::string err;
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
+            try { dap.hostStatus(1, 1); } catch (...) {}
             auto res = dap.verifyImage(img.baseAddr, img.data, speed, underReset,
                 [&](const std::string&, uint32_t d, uint32_t t) {
                     int pct = t ? static_cast<int>(100 * d / t) : 100;
                     QMetaObject::invokeMethod(progress, [progress, pct]() { progress->setValue(pct); }, Qt::QueuedConnection);
                 });
+            try { dap.hostStatus(0, 1); } catch (...) {}
             if (res.mismatches == 0) postLog("[OK] Verify PASSED 100%!");
             else postLog(QString("[FAIL] Verify mismatch: %1 words!").arg(res.mismatches));
         });
@@ -563,9 +569,11 @@ int main(int argc, char* argv[]) {
             LinuxHidDevice hid; std::string err;
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
+            try { dap.hostStatus(1, 1); } catch (...) {}
             auto info = dap.massErase(speed, underReset);
             postLog("[OK] Mass Erase completed on " + QString::fromStdString(info.name));
             auto refreshed = dap.probeTarget(speed, false, true);
+            try { dap.hostStatus(0, 1); } catch (...) {}
             QString txt = formatTargetText(refreshed);
             QMetaObject::invokeMethod(winPtr, [&, txt]() { edtTarget->setPlainText(txt); }, Qt::QueuedConnection);
         });
@@ -581,6 +589,7 @@ int main(int argc, char* argv[]) {
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
             auto st = dap.debugStart(speed, ur);
+            try { dap.hostStatus(2, 1); } catch (...) {}
             QString txt = formatDebugText(st);
             QMetaObject::invokeMethod(winPtr, [&, txt]() {
                 debugActive = true;
@@ -598,6 +607,7 @@ int main(int argc, char* argv[]) {
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
             dap.debugExit(speed);
+            try { dap.hostStatus(2, 0); dap.hostStatus(0, 1); } catch (...) {}
             QMetaObject::invokeMethod(winPtr, [&]() {
                 debugActive = false;
                 dText->setPlainText("Debug Session: EXITED (CPU running freely)\nClick [Start Debug] to attach.");
@@ -615,6 +625,7 @@ int main(int argc, char* argv[]) {
             LinuxHidDevice hid; std::string err;
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
+            try { dap.hostStatus(2, 2); } catch (...) {}
             postLog("[DEBUG] " + QString::fromStdString(dap.cpuControl(act, speed)));
             if (act == "halt" || act == "step_into" || act == "step_out") {
                 QString txt = formatDebugText(dap.readCpuStatus(speed, false));
@@ -823,6 +834,7 @@ int main(int argc, char* argv[]) {
             LinuxHidDevice hid; std::string err;
             if (!hid.open(getSelectedHid(), err)) throw std::runtime_error(err);
             LinuxCmsisDap dap(hid);
+            try { dap.hostStatus(1, 1); } catch (...) {}
             auto info = dap.probeTarget(speed, ur, false);
             uint32_t len = info.flashKB ? info.flashKB * 1024U : 65536U;
             auto bytes = dap.readMemoryBytes(0x08000000, len, speed, ur,
@@ -832,6 +844,7 @@ int main(int argc, char* argv[]) {
                 });
             std::ofstream f(outP.toStdString(), std::ios::binary);
             f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+            try { dap.hostStatus(0, 1); } catch (...) {}
             postLog(QString("[OK] Saved Flash dump (%1 bytes).").arg(bytes.size()));
         });
     });
@@ -863,12 +876,13 @@ int main(int argc, char* argv[]) {
     QObject::connect(mHelp->addAction("LED Status Legend"), &QAction::triggered, [&]() {
         QMessageBox::information(&win, "LED Status Legend",
             "Probe LED (PC13) Status Legend:\n\n"
-            "• Heartbeat (2 short blinks / 1.2s): Idle / Ready\n"
-            "• Solid ON: SWD / Target Connected\n"
-            "• Rapid Flicker (16.7 Hz): Flashing / Erasing / Verifying\n"
-            "• Double Blink (1.0s): Target CPU Halted (Debug)\n"
-            "• Triple Rapid Blink: SWD Error / Verify Mismatch\n\n"
-            "On-board Button (PA0): Press and hold to pull nRESET (PB8) LOW.");
+            "• Single Blink (1.0s cycle): Idle / Standby (Not connected)\n"
+            "• Double Blink (1.2s cycle): Target SWD Connected\n"
+            "• Solid ON: Debug Mode Active (Halted / Attached)\n"
+            "• 3 Rapid Pulses: Debug Command Execution (Step/Halt/Run/Regs)\n"
+            "• Rapid Continuous Flicker (16.7 Hz): Flashing / Erasing / Verifying\n"
+            "• 3 Fast Blinks: SWD Error / Verify Mismatch\n\n"
+            "On-board Button (PA0): Hardware reset button (pulls nRESET / PB8 LOW).");
     });
     QObject::connect(mHelp->addAction("About"), &QAction::triggered, [&]() {
         QMessageBox::information(&win, "About",

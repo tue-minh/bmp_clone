@@ -73,6 +73,7 @@ class LinuxCmsisDap {
 public:
     explicit LinuxCmsisDap(LinuxHidDevice& dev) : dev_(dev) {}
 
+    void hostStatus(uint8_t ledType, uint8_t status);
     uint8_t connectSwd();
     void disconnect();
     void swjClock(uint32_t hz);

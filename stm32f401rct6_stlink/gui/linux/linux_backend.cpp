@@ -61,6 +61,7 @@ std::string strLower(std::string s) {
     return s;
 }
 
+constexpr uint8_t ID_DAP_HOST_STATUS        = 0x01;
 constexpr uint8_t ID_DAP_CONNECT            = 0x02;
 constexpr uint8_t ID_DAP_DISCONNECT         = 0x03;
 constexpr uint8_t ID_DAP_TRANSFER_CONFIGURE = 0x04;
@@ -321,6 +322,10 @@ std::vector<uint8_t> LinuxCmsisDap::cmd(const std::vector<uint8_t>& payload) {
     auto r = dev_.exchange(payload);
     if (r.empty() || r[0] != payload[0]) throw std::runtime_error("DAP invalid response");
     return r;
+}
+
+void LinuxCmsisDap::hostStatus(uint8_t ledType, uint8_t status) {
+    cmd({ID_DAP_HOST_STATUS, ledType, status});
 }
 
 uint8_t LinuxCmsisDap::connectSwd() {

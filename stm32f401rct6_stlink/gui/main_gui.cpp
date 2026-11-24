@@ -455,6 +455,7 @@ static void doConnect() {
         CmsisDapClient dap(hid);
         postLog("[SWD] Connecting and reading Chip ID + 512B Flash @ 0x08000000...");
         Stm32TargetInfo info = dap.probeTarget(speed, underReset, true);
+        try { dap.hostStatus(0, true); } catch (...) {}
         postLog("[SWD] Connected: " + info.name + " | Flash=" + std::to_string(info.flashKB) + " KB");
 
         auto* txt = new std::wstring(formatTargetInfoText(info));
@@ -539,6 +540,7 @@ static void doFlash() {
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
 
         CmsisDapClient dap(hid);
+        try { dap.hostStatus(1, true); } catch (...) {}
         ULONGLONG t0 = GetTickCount64();
         Stm32TargetInfo info = dap.flashImage(
             img.baseAddr, img.data, speed, underReset, true,
@@ -558,6 +560,7 @@ static void doFlash() {
         postLog(msg);
 
         Stm32TargetInfo refreshed = dap.probeTarget(speed, false, true);
+        try { dap.hostStatus(0, true); } catch (...) {}
         auto* txt = new std::wstring(formatTargetInfoText(refreshed));
         PostMessageW(g_hMainWnd, WM_APP_CONNECT_DONE, 1, reinterpret_cast<LPARAM>(txt));
     });
@@ -581,11 +584,13 @@ static void doVerify() {
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
 
         CmsisDapClient dap(hid);
+        try { dap.hostStatus(1, true); } catch (...) {}
         auto res = dap.verifyImage(img.baseAddr, img.data, speed, underReset,
                                    [](const std::string&, uint32_t done, uint32_t total) {
                                        int pct = total ? static_cast<int>(100 * done / total) : 100;
                                        PostMessageW(g_hMainWnd, WM_APP_PROGRESS, pct, 0);
                                    });
+        try { dap.hostStatus(0, true); } catch (...) {}
         if (res.mismatches == 0) {
             postLog("[OK] Verify PASSED 100% (" + std::to_string(img.data.size()) + " bytes) on " + res.info.name);
         } else {
@@ -667,11 +672,13 @@ static void doErase() {
         std::string err;
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
         CmsisDapClient dap(hid);
+        try { dap.hostStatus(1, true); } catch (...) {}
         postLog("[ERASE] Erasing target Flash...");
         Stm32TargetInfo info = dap.massErase(speed, underReset);
         postLog("[OK] Mass Erase completed on " + info.name);
 
         Stm32TargetInfo refreshed = dap.probeTarget(speed, false, true);
+        try { dap.hostStatus(0, true); } catch (...) {}
         auto* txt = new std::wstring(formatTargetInfoText(refreshed));
         PostMessageW(g_hMainWnd, WM_APP_CONNECT_DONE, 1, reinterpret_cast<LPARAM>(txt));
     });
@@ -690,6 +697,7 @@ static void doDebugStart() {
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
         CmsisDapClient dap(hid);
         CpuDebugStatus st = dap.debugStart(speed, underReset);
+        try { dap.hostStatus(2, 1); } catch (...) {}
         auto* dbgTxt = new std::wstring(formatDebugStatusText(st));
         PostMessageW(g_hMainWnd, WM_APP_DEBUG_INFO, 1, reinterpret_cast<LPARAM>(dbgTxt));
         postLog("[DEBUG] Debug session started (CPU halted @ PC=0x" +
@@ -706,6 +714,7 @@ static void doDebugExit() {
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
         CmsisDapClient dap(hid);
         dap.debugExit(speed);
+        try { dap.hostStatus(2, 0); dap.hostStatus(0, true); } catch (...) {}
         auto* dbgTxt = new std::wstring(L"Debug Session: EXITED (CPU running freely)\r\nClick [Start Debug] to attach and halt CPU.");
         PostMessageW(g_hMainWnd, WM_APP_DEBUG_INFO, 2, reinterpret_cast<LPARAM>(dbgTxt));
         postLog("[DEBUG] Exited debug mode; CPU running freely.");
@@ -732,6 +741,7 @@ static void doCpuAction(const std::string& action) {
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
         CmsisDapClient dap(hid);
         std::string res = dap.cpuControl(action, speed);
+        try { dap.hostStatus(2, 2); } catch (...) {}
         postLog("[DEBUG] " + res);
         if (action == "halt" || action == "step_into" || action == "step_out") {
             CpuDebugStatus st = dap.readCpuStatus(speed, false);
@@ -755,6 +765,7 @@ static void doReadRegs() {
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
         CmsisDapClient dap(hid);
         CpuDebugStatus st = dap.readCpuStatus(speed, underReset);
+        try { dap.hostStatus(2, 2); } catch (...) {}
         auto* dbgTxt = new std::wstring(formatDebugStatusText(st));
         PostMessageW(g_hMainWnd, WM_APP_DEBUG_INFO, 1, reinterpret_cast<LPARAM>(dbgTxt));
         char msg[96];
@@ -801,6 +812,7 @@ static void doDumpFlashBin() {
         std::string err;
         if (!hid.open(devInfo, err)) throw std::runtime_error(err);
         CmsisDapClient dap(hid);
+        try { dap.hostStatus(1, true); } catch (...) {}
         Stm32TargetInfo info = dap.probeTarget(speed, underReset, false);
         uint32_t len = (info.flashKB > 0) ? (info.flashKB * 1024U) : (64U * 1024U);
         postLog("[DUMP] Reading " + std::to_string(len / 1024) + " KB Flash from " + info.name + "...");
@@ -811,6 +823,7 @@ static void doDumpFlashBin() {
                                          });
         std::ofstream f(outPath.c_str(), std::ios::binary);
         f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+        try { dap.hostStatus(0, true); } catch (...) {}
         postLog("[OK] Saved Flash dump (" + std::to_string(bytes.size()) + " bytes).");
     });
 }
@@ -1473,12 +1486,13 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         case IDM_HELP_LED:
             MessageBoxW(hwnd,
                         L"Probe LED (PC13) Status Legend:\n\n"
-                        L"• Heartbeat (2 short blinks / 1.2s): Idle / Ready\n"
-                        L"• Solid ON: SWD / Target Connected\n"
-                        L"• Rapid Flicker (16.7 Hz): Flashing / Erasing / Verifying\n"
-                        L"• Double Blink (1.0s): Target CPU Halted (Debug)\n"
-                        L"• Triple Rapid Blink: SWD Error / Verify Mismatch\n\n"
-                        L"On-board Button (PA0): Press and hold to pull nRESET (PB8) LOW.",
+                        L"• Single Blink (1.0s cycle): Idle / Standby (Not connected)\n"
+                        L"• Double Blink (1.2s cycle): Target SWD Connected\n"
+                        L"• Solid ON: Debug Mode Active (Halted / Attached)\n"
+                        L"• 3 Rapid Pulses: Debug Command Execution (Step/Halt/Run/Regs)\n"
+                        L"• Rapid Continuous Flicker (16.7 Hz): Flashing / Erasing / Verifying\n"
+                        L"• 3 Fast Blinks: SWD Error / Verify Mismatch\n\n"
+                        L"On-board Button (PA0): Hardware reset button (pulls nRESET / PB8 LOW).",
                         L"LED Status Legend", MB_ICONINFORMATION);
             break;
         case IDM_HELP_ABOUT:

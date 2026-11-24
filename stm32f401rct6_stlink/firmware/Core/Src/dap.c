@@ -166,13 +166,29 @@ static uint32_t dapHostStatus(const uint8_t *req, uint8_t *resp)
   uint8_t status = req[1];
   if (type == 0U)
   {
-    /* Type 0: Connect LED - Host debugger is connected/active */
+    /* Type 0: Connect LED - Connected (Double blink) or Idle (Single blink) */
     ledStatusSetState((status != 0U) ? LED_STATE_CONNECTED : LED_STATE_IDLE);
   }
   else if (type == 1U)
   {
-    /* Type 1: Running LED - Target CPU is Running (1) or Halted (0) */
-    ledStatusSetState((status != 0U) ? LED_STATE_CONNECTED : LED_STATE_DEBUG_HALTED);
+    /* Type 1: Flashing / Erasing / Verifying busy (Nháy liên tục đến khi xong) */
+    ledStatusSetState((status != 0U) ? LED_STATE_BUSY_FLASHING : LED_STATE_CONNECTED);
+  }
+  else if (type == 2U)
+  {
+    /* Type 2: Debug Mode */
+    if (status == 1U)
+    {
+      ledStatusSetState(LED_STATE_DEBUG); /* Sáng liên tục */
+    }
+    else if (status == 2U)
+    {
+      ledStatusDebugCommandPulse();       /* Nháy 3 lần liên tục rồi lại sáng liên tục */
+    }
+    else
+    {
+      ledStatusSetState(LED_STATE_CONNECTED);
+    }
   }
   resp[0] = DAP_OK;
   return (2U << 16U) | 1U;
@@ -437,7 +453,14 @@ static uint32_t dapTransfer(const uint8_t *req, uint8_t *resp)
   }
   else
   {
-    ledStatusActivityPulse();
+    if (ledStatusGetState() == LED_STATE_DEBUG)
+    {
+      ledStatusDebugCommandPulse();
+    }
+    else
+    {
+      ledStatusActivityPulse();
+    }
   }
 
   return ((uint32_t)(reqPtr - req) << 16U) | (uint32_t)(respBody - respPtr);
@@ -550,7 +573,14 @@ end_block:
   }
   else
   {
-    ledStatusActivityPulse();
+    if (ledStatusGetState() == LED_STATE_DEBUG)
+    {
+      ledStatusDebugCommandPulse();
+    }
+    else
+    {
+      ledStatusActivityPulse();
+    }
   }
 
   return ((uint32_t)(reqPtr - req) << 16U) | (uint32_t)(respBody - respPtr);

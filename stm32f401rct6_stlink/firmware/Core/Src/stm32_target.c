@@ -399,7 +399,7 @@ bool stm32TargetHalt(char *err, size_t errLen)
     ledStatusSetErrorTemporary(2000U);
     return false;
   }
-  ledStatusSetState(LED_STATE_DEBUG_HALTED);
+  ledStatusSetState(LED_STATE_DEBUG);
   return true;
 }
 

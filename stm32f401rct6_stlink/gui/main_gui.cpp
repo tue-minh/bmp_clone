@@ -1411,7 +1411,7 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         g_hDevNotifyHid = RegisterDeviceNotificationW(hwnd, &filter, DEVICE_NOTIFY_WINDOW_HANDLE);
 
         refreshUsbAutoDetect(false);
-        postLog("[READY] TUE CMSIS-DAP Native C++ GUI v1.0.0 ready. USB plug-and-play active.");
+        postLog("[READY] CMSIS-DAP Programmer & Debugger ready. USB plug-and-play active.");
         return 0;
     }
 
@@ -1537,7 +1537,8 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             break;
         case IDM_HELP_ABOUT:
             MessageBoxW(hwnd,
-                        L"TUE CMSIS-DAP Native C++ Programmer v1.0.0\n"
+                        L"CMSIS-DAP Programmer & Debugger\n"
+                        L"Author: TUE  |  Version: v1.0.1\n\n"
                         L"Pure Win32 C++17 with USB Plug & Play auto-detection.\n"
                         L"Supports direct SWD flashing (F1/F3/F4/G4/L4) without OpenOCD,\n"
                         L"dedicated CPU Debug Window (Step Into / Step Out),\n"
@@ -1677,7 +1678,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     AdjustWindowRect(&rc, style, TRUE);
 
     g_hMainWnd = CreateWindowExW(
-        0, L"TueDapMainClass", L"TUE CMSIS-DAP Programmer & Debugger v1.0.0",
+        0, L"TueDapMainClass", L"CMSIS-DAP Programmer & Debugger",
         style, CW_USEDEFAULT, CW_USEDEFAULT, rc.right - rc.left, rc.bottom - rc.top,
         nullptr, createMainMenu(), hInstance, nullptr);
 

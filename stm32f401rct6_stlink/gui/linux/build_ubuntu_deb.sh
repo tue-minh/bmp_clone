@@ -6,7 +6,7 @@ cd "$SCRIPT_DIR"
 
 OUT_DIR="."
 PKG_NAME="tue-cmsis-dap"
-PKG_VER="1.0.0"
+PKG_VER="1.0.1"
 ARCH="amd64"
 STAGE="/tmp/${PKG_NAME}_${PKG_VER}_${ARCH}"
 
@@ -31,7 +31,7 @@ cp "../MT_Logo.png" "$STAGE/usr/share/icons/hicolor/256x256/apps/tue-cmsis-dap.p
 cat > "$STAGE/usr/share/applications/tue-cmsis-dap.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
-Name=TUE CMSIS-DAP Programmer
+Name=CMSIS-DAP Programmer & Debugger
 Comment=Native C++ STM32 SWD Programmer & Debugger
 Exec=/usr/local/bin/tue-cmsis-dap
 Icon=tue-cmsis-dap

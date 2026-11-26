@@ -146,7 +146,7 @@ int main(int argc, char* argv[]) {
 
     QMainWindow win;
     QMainWindow* winPtr = &win;
-    win.setWindowTitle("TUE CMSIS-DAP Programmer & Debugger v1.0.0");
+    win.setWindowTitle("CMSIS-DAP Programmer & Debugger");
     win.setFixedSize(900, 620);
 
     QFont monoFont("Monospace", 9);
@@ -933,7 +933,8 @@ int main(int argc, char* argv[]) {
     });
     QObject::connect(mHelp->addAction("About"), &QAction::triggered, [&]() {
         QMessageBox::information(&win, "About",
-            "TUE CMSIS-DAP Native C++ Programmer v1.0.0 (Ubuntu)\n"
+            "CMSIS-DAP Programmer & Debugger (Ubuntu)\n"
+            "Author: TUE  |  Version: v1.0.1\n\n"
             "Direct USB HID (/dev/hidraw*) + Virtual COM (/dev/ttyACM*)\n"
             "Supports direct SWD flashing (F1/F3/F4/G4/L4) without OpenOCD.");
     });
@@ -950,7 +951,7 @@ int main(int argc, char* argv[]) {
         }
     });
 
-    postLog("[READY] TUE CMSIS-DAP Native C++ GUI v1.0.0 ready. USB plug-and-play active.");
+    postLog("[READY] CMSIS-DAP Programmer & Debugger ready. USB plug-and-play active.");
     win.show();
     return app.exec();
 }

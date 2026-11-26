@@ -161,7 +161,7 @@ Khi chưa mở phiên debug trên PC, bạn có thể dùng Terminal (`115200 8N
 * **Ubuntu / Linux (`Qt5Widgets`):**
   * Cài đặt bằng gói `.deb` (tự động cài icon logo, shortcut & `udev rules`):
     ```bash
-    sudo apt install ../gui/linux/tue-cmsis-dap_1.0.0_amd64.deb
+    sudo apt install ../gui/linux/tue-cmsis-dap_1.0.1_amd64.deb
     tue-cmsis-dap
     ```
   * Hoặc chạy file binary trực tiếp: [../gui/linux/tue-cmsis-dap-ubuntu-x86_64](../gui/linux/tue-cmsis-dap-ubuntu-x86_64)

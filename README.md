@@ -2,7 +2,7 @@
 
 This repository contains the KiCad hardware, firmware, and host software for two STM32 debug probe implementations:
 
-1. **`stm32f401rct6_stlink/` (Latest - v1.0.0):** **TUE CMSIS-DAP + Virtual COM Port** probe based on **STM32F401RCT6**, paired with a lightweight **native C++17 GUI** for **Windows** and **Ubuntu**.
+1. **`stm32f401rct6_stlink/` (Latest - v1.0.1):** **CMSIS-DAP Programmer & Debugger + Virtual COM Port** probe based on **STM32F401RCT6**, paired with a lightweight **native C++17 GUI** for **Windows** and **Ubuntu**.
 2. **`blackmagic-firmware-v1.10.2/` & `hardware/`:** **Black Magic Probe (BMP)** clone based on **STM32F103C8T6 (Bluepill)**.
 
 ---
@@ -14,7 +14,7 @@ This repository contains the KiCad hardware, firmware, and host software for two
 | [`stm32f401rct6_stlink/`](stm32f401rct6_stlink/firmware/README.md) | STM32F401RCT6 probe project (KiCad PCB + CMSIS-DAP/VCP Firmware + C++ GUI) |
 | [`stm32f401rct6_stlink/firmware/`](stm32f401rct6_stlink/firmware/README.md) | STM32F401RCT6 firmware source & prebuilt `.bin`/`.hex` (`tue-cmsis-dap-stm32f401rct6.bin`) |
 | [`stm32f401rct6_stlink/gui/`](stm32f401rct6_stlink/gui/main_gui.cpp) | Native C++17 GUI for Windows (`TUE_CMSIS_DAP_CPP.exe`) |
-| [`stm32f401rct6_stlink/gui/linux/`](stm32f401rct6_stlink/gui/linux/linux_main.cpp) | Native C++17 Qt5 GUI & `.deb` package for Ubuntu (`tue-cmsis-dap_1.0.0_amd64.deb`) |
+| [`stm32f401rct6_stlink/gui/linux/`](stm32f401rct6_stlink/gui/linux/linux_main.cpp) | Native C++17 Qt5 GUI & `.deb` package for Ubuntu (`tue-cmsis-dap_1.0.1_amd64.deb`) |
 | `blackmagic-firmware-v1.10.2/` | Black Magic Probe v1.10.2 firmware for STM32F103C8T6 |
 | `hardware/` & `Tue_BMP_Gerber/` | KiCad hardware design & Gerber files for the Bluepill BMP |
 
@@ -44,7 +44,7 @@ This repository contains the KiCad hardware, firmware, and host software for two
 * **Windows:** Run `stm32f401rct6_stlink/gui/TUE_CMSIS_DAP_CPP.exe` directly.
 * **Ubuntu / Linux:**
   ```bash
-  sudo apt install ./stm32f401rct6_stlink/gui/linux/tue-cmsis-dap_1.0.0_amd64.deb
+  sudo apt install ./stm32f401rct6_stlink/gui/linux/tue-cmsis-dap_1.0.1_amd64.deb
   tue-cmsis-dap
   ```
   *(Or run the standalone binary `stm32f401rct6_stlink/gui/linux/tue-cmsis-dap-ubuntu-x86_64`)*

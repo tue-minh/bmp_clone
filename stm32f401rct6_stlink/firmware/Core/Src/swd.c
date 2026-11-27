@@ -220,18 +220,18 @@ void swdInit(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
-  /* PA4: SWDIO Output Push-Pull with Pull-Up, Very High Speed */
+  /* PA4: SWDIO Output Push-Pull with Pull-Up, Medium Speed (suppress ringing on jumper wires) */
   GPIO_InitStruct.Pin   = MCU_SWDIO_Pin;
   GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull  = GPIO_PULLUP;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
   HAL_GPIO_Init(MCU_SWDIO_GPIO_Port, &GPIO_InitStruct);
 
-  /* PB4: SWCLK Output Push-Pull, Very High Speed */
+  /* PB4: SWCLK Output Push-Pull, Medium Speed (suppress ringing / double-clocking) */
   GPIO_InitStruct.Pin   = MCU_SWDCLK_Pin;
   GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull  = GPIO_PULLUP;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
   HAL_GPIO_Init(MCU_SWDCLK_GPIO_Port, &GPIO_InitStruct);
 
   /* PB8: nRESET Output Open-Drain, default released (HIGH) */

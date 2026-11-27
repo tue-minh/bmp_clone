@@ -128,11 +128,26 @@ bool WinHidDevice::open(const HidDeviceInfo& info, std::string& errOut) {
     }
     inLen_ = info.inReportLen;
     outLen_ = info.outReportLen;
+    evW_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    evR_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!evW_ || !evR_) {
+        close();
+        errOut = "Cannot create Win32 event handles";
+        return false;
+    }
     HidD_SetNumInputBuffers(handle_, 32);
     return true;
 }
 
 void WinHidDevice::close() {
+    if (evW_) {
+        CloseHandle(evW_);
+        evW_ = nullptr;
+    }
+    if (evR_) {
+        CloseHandle(evR_);
+        evR_ = nullptr;
+    }
     if (handle_ != INVALID_HANDLE_VALUE) {
         CloseHandle(handle_);
         handle_ = INVALID_HANDLE_VALUE;
@@ -151,48 +166,42 @@ std::vector<uint8_t> WinHidDevice::exchange(const std::vector<uint8_t>& payload,
         outBuf[1 + i] = payload[i];
     }
 
-    HANDLE evW = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    ResetEvent(evW_);
     OVERLAPPED ovW{};
-    ovW.hEvent = evW;
+    ovW.hEvent = evW_;
 
     DWORD written = 0;
     BOOL okW = WriteFile(handle_, outBuf.data(), outLen_, &written, &ovW);
     if (!okW) {
         DWORD err = GetLastError();
         if (err != ERROR_IO_PENDING) {
-            CloseHandle(evW);
             throw std::runtime_error("HID WriteFile failed (err=" + std::to_string(err) + ")");
         }
-        if (WaitForSingleObject(evW, timeoutMs) != WAIT_OBJECT_0) {
+        if (WaitForSingleObject(evW_, timeoutMs) != WAIT_OBJECT_0) {
             CancelIo(handle_);
-            CloseHandle(evW);
             throw std::runtime_error("HID WriteFile timeout");
         }
         GetOverlappedResult(handle_, &ovW, &written, FALSE);
     }
-    CloseHandle(evW);
 
     std::vector<uint8_t> inBuf(inLen_, 0);
-    HANDLE evR = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    ResetEvent(evR_);
     OVERLAPPED ovR{};
-    ovR.hEvent = evR;
+    ovR.hEvent = evR_;
 
     DWORD readBytes = 0;
     BOOL okR = ReadFile(handle_, inBuf.data(), inLen_, &readBytes, &ovR);
     if (!okR) {
         DWORD err = GetLastError();
         if (err != ERROR_IO_PENDING) {
-            CloseHandle(evR);
             throw std::runtime_error("HID ReadFile failed (err=" + std::to_string(err) + ")");
         }
-        if (WaitForSingleObject(evR, timeoutMs) != WAIT_OBJECT_0) {
+        if (WaitForSingleObject(evR_, timeoutMs) != WAIT_OBJECT_0) {
             CancelIo(handle_);
-            CloseHandle(evR);
             throw std::runtime_error("HID ReadFile timeout");
         }
         GetOverlappedResult(handle_, &ovR, &readBytes, FALSE);
     }
-    CloseHandle(evR);
 
     if (readBytes > 1) {
         return std::vector<uint8_t>(inBuf.begin() + 1, inBuf.begin() + readBytes);

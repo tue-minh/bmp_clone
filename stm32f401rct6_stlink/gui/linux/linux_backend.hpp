@@ -127,6 +127,11 @@ private:
     void flashF2F4(uint32_t baseAddr, const std::vector<uint8_t>& padded, ProgressCallback cb);
     void flashG4L4(uint32_t baseAddr, const std::vector<uint8_t>& padded, uint32_t pageSz, ProgressCallback cb);
     uint32_t readCoreReg(uint8_t regIdx);
+    void writeCoreReg(uint8_t regIdx, uint32_t val);
+    void runSramFlashStub(const uint32_t* stubWords, size_t stubWordCount,
+                          uint32_t dstAddr, const uint8_t* chunkData, size_t chunkBytes,
+                          uint32_t unitSize, uint32_t srAddr, uint32_t bsyMask, uint32_t errMask,
+                          bool uploadStub);
 };
 
 class LinuxSerialPort {

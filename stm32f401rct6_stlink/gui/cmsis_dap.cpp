@@ -103,6 +103,32 @@ std::string hex32(uint32_t v) {
     return buf;
 }
 
+// Position-independent Thumb-1 SRAM flashloader stubs (assembled for Cortex-M0+)
+// Inputs: r0=src(SRAM), r1=dst(Flash), r2=unitCount, r3=FLASH_SR, r4=BSY_MASK, r5=ERR_MASK
+// Returns: r0=0 on success, r0=FLASH_SR on error, halts via BKPT #0
+constexpr uint32_t kStubG4L4[] = {
+    0xD00E2A00U, 0x68476806U, 0x604F600EU, 0x8F4FF3BFU,
+    0x4226681EU, 0x422ED1FCU, 0x3008D105U, 0x3A013108U,
+    0x2000E7EEU, 0x4630BE00U, 0x46C0BE00U
+};
+
+constexpr uint32_t kStubF2F4[] = {
+    0xD00C2A00U, 0x600E6806U, 0x8F4FF3BFU, 0x4226681EU,
+    0x422ED1FCU, 0x3004D105U, 0x3A013104U, 0x2000E7F0U,
+    0x4630BE00U, 0x46C0BE00U
+};
+
+constexpr uint32_t kStubF1F3[] = {
+    0xD00C2A00U, 0x800E8806U, 0x8F4FF3BFU, 0x4226681EU,
+    0x422ED1FCU, 0x3002D105U, 0x3A013102U, 0x2000E7F0U,
+    0x4630BE00U, 0x46C0BE00U
+};
+
+constexpr uint32_t kSramCodeBase = 0x20000000U;
+constexpr uint32_t kSramBufBase  = 0x20000040U;
+constexpr uint32_t kSramStackTop = 0x20001800U;
+constexpr uint32_t kSramChunkMax = 4096U;
+
 } // namespace
 
 std::vector<uint8_t> CmsisDapClient::cmd(const std::vector<uint8_t>& payload) {
@@ -348,12 +374,20 @@ void CmsisDapClient::memWriteBlock(uint32_t addr, const std::vector<uint32_t>& w
     while (idx < total) {
         uint32_t room = (0x400 - (addr & 0x3FF)) / 4;
         size_t n = (std::min)(total - idx, static_cast<size_t>(room));
-        uint8_t cnt = 0, ack = 0;
-        std::vector<uint32_t> vals;
-        transfer({{0x01 | 0x04, addr}}, cnt, ack, vals);
-        if (ack != 1) throw std::runtime_error("AP_TAR write failed at " + hex32(addr));
         std::vector<uint32_t> chunk(words.begin() + idx, words.begin() + idx + n);
-        transferBlockWrite(0x01 | 0x0C, chunk);
+        for (int attempt = 0; attempt < 3; ++attempt) {
+            try {
+                uint8_t cnt = 0, ack = 0;
+                std::vector<uint32_t> vals;
+                transfer({{0x01 | 0x04, addr}}, cnt, ack, vals);
+                if (ack != 1) throw std::runtime_error("AP_TAR write failed at " + hex32(addr));
+                transferBlockWrite(0x01 | 0x0C, chunk);
+                break;
+            } catch (...) {
+                if (attempt == 2) throw;
+                try { writeAbort(0x1E); } catch (...) {}
+            }
+        }
         addr += static_cast<uint32_t>(n) * 4;
         idx += n;
     }
@@ -365,11 +399,20 @@ std::vector<uint32_t> CmsisDapClient::memReadBlock(uint32_t addr, uint32_t count
     while (count > 0) {
         uint32_t room = (0x400 - (addr & 0x3FF)) / 4;
         uint32_t n = (std::min)(count, room);
-        uint8_t cnt = 0, ack = 0;
-        std::vector<uint32_t> vals;
-        transfer({{0x01 | 0x04, addr}}, cnt, ack, vals);
-        if (ack != 1) throw std::runtime_error("AP_TAR write failed at " + hex32(addr));
-        auto chunk = transferBlockRead(0x01 | 0x02 | 0x0C, n);
+        std::vector<uint32_t> chunk;
+        for (int attempt = 0; attempt < 3; ++attempt) {
+            try {
+                uint8_t cnt = 0, ack = 0;
+                std::vector<uint32_t> vals;
+                transfer({{0x01 | 0x04, addr}}, cnt, ack, vals);
+                if (ack != 1) throw std::runtime_error("AP_TAR write failed at " + hex32(addr));
+                chunk = transferBlockRead(0x01 | 0x02 | 0x0C, n);
+                break;
+            } catch (...) {
+                if (attempt == 2) throw;
+                try { writeAbort(0x1E); } catch (...) {}
+            }
+        }
         out.insert(out.end(), chunk.begin(), chunk.end());
         addr += n * 4;
         count -= n;
@@ -567,12 +610,16 @@ void CmsisDapClient::flashF1F3(uint32_t baseAddr, const std::vector<uint8_t>& pa
         if (memRead32(CR) & (1U << 7)) throw std::runtime_error("F1/F3 Flash unlock failed");
     }
     try {
+        waitFlashReady(SR, 1U, 0U, 0U, 500);
+        memWrite32(SR, 0x34U);
+
         uint32_t startPage = (baseAddr - 0x08000000) / pageSz;
         uint32_t endPage = (baseAddr + static_cast<uint32_t>(padded.size()) - 1 - 0x08000000) / pageSz;
         uint32_t numPages = endPage - startPage + 1;
         for (uint32_t idx = 0; idx < numPages; ++idx) {
             if (cb) cb("erase", idx, numPages);
             waitFlashReady(SR, 1, 0x14, 0x20, 500);
+            memWrite32(SR, 0x34U);
             memWrite32(CR, 0x02);
             memWrite32(AR, 0x08000000 + (startPage + idx) * pageSz);
             memWrite32(CR, 0x42);
@@ -580,21 +627,18 @@ void CmsisDapClient::flashF1F3(uint32_t baseAddr, const std::vector<uint8_t>& pa
         }
         if (cb) cb("erase", numPages, numPages);
 
-        memWrite32(CR, 0x01);
-        std::vector<uint16_t> hwAll(padded.size() / 2);
-        for (size_t i = 0; i < hwAll.size(); ++i) {
-            hwAll[i] = getLE16(&padded[i * 2]);
+        memWrite32(CR, 0x01); // PG = 1
+        uint32_t totalBytes = static_cast<uint32_t>(padded.size());
+        for (uint32_t off = 0; off < totalBytes; off += kSramChunkMax) {
+            uint32_t cnt = (std::min)(kSramChunkMax, totalBytes - off);
+            runSramFlashStub(kStubF1F3, sizeof(kStubF1F3) / sizeof(kStubF1F3[0]),
+                             baseAddr + off, &padded[off], cnt, 2U, SR, 1U, 0x14U, off == 0);
+            if (cb) cb("program", off + cnt, totalBytes);
         }
-        const size_t batchHw = 128;
-        for (size_t off = 0; off < hwAll.size(); off += batchHw) {
-            size_t cnt = (std::min)(batchHw, hwAll.size() - off);
-            std::vector<uint16_t> chunk(hwAll.begin() + off, hwAll.begin() + off + cnt);
-            memWrite16Batch(baseAddr + static_cast<uint32_t>(off * 2), chunk);
-            waitFlashReady(SR, 1, 0x14, 0x20, 500);
-            if (cb) cb("program", static_cast<uint32_t>((off + cnt) * 2), static_cast<uint32_t>(padded.size()));
-        }
+        memWrite32(CR, 0U);
         memWrite32(CR, 1U << 7);
     } catch (...) {
+        try { memWrite32(CR, 0U); } catch (...) {}
         try { memWrite32(CR, 1U << 7); } catch (...) {}
         throw;
     }
@@ -608,6 +652,9 @@ void CmsisDapClient::flashF2F4(uint32_t baseAddr, const std::vector<uint8_t>& pa
         if (memRead32(CR) & (1U << 31)) throw std::runtime_error("F4 Flash unlock failed");
     }
     try {
+        waitFlashReady(SR, 1U << 16, 0U, 0U, 500);
+        memWrite32(SR, 0x1F3U);
+
         static const uint32_t sectorSizes[12] = {
             16384, 16384, 16384, 16384, 65536,
             131072, 131072, 131072, 131072, 131072, 131072, 131072
@@ -633,59 +680,64 @@ void CmsisDapClient::flashF2F4(uint32_t baseAddr, const std::vector<uint8_t>& pa
 
         memWrite32(CR, (1U << 0) | (2U << 8)); // PG = 1, PSIZE = 32-bit
         uint32_t totalBytes = static_cast<uint32_t>(padded.size());
-        for (uint32_t off = 0; off < totalBytes; off += 4) {
-            uint32_t w = getLE32(&padded[off]);
-            uint32_t addr = baseAddr + off;
-            memWrite32(addr, w);
-            waitFlashReady(SR, 1U << 16, 0x1F2, 1, 500);
-            if (cb && ((off & 0x7FF) == 0 || off + 4 >= totalBytes)) {
-                cb("program", off + 4, totalBytes);
-            }
+        for (uint32_t off = 0; off < totalBytes; off += kSramChunkMax) {
+            uint32_t cnt = (std::min)(kSramChunkMax, totalBytes - off);
+            runSramFlashStub(kStubF2F4, sizeof(kStubF2F4) / sizeof(kStubF2F4[0]),
+                             baseAddr + off, &padded[off], cnt, 4U, SR, 1U << 16, 0x1F2U, off == 0);
+            if (cb) cb("program", off + cnt, totalBytes);
         }
+        memWrite32(CR, 0U);
         memWrite32(CR, 1U << 31);
     } catch (...) {
+        try { memWrite32(CR, 0U); } catch (...) {}
         try { memWrite32(CR, 1U << 31); } catch (...) {}
         throw;
     }
 }
 
 void CmsisDapClient::flashG4L4(uint32_t baseAddr, const std::vector<uint8_t>& padded, uint32_t pageSz, ProgressCallback cb) {
-    const uint32_t CR = 0x40022014, SR = 0x40022010, KEYR = 0x40022008;
+    const uint32_t ACR = 0x40022000, CR = 0x40022014, SR = 0x40022010, KEYR = 0x40022008;
     if (memRead32(CR) & (1U << 31)) {
         memWrite32(KEYR, FLASH_KEY1);
         memWrite32(KEYR, FLASH_KEY2);
         if (memRead32(CR) & (1U << 31)) throw std::runtime_error("G4/L4 Flash unlock failed");
     }
+    uint32_t savedAcr = memRead32(ACR);
     try {
+        waitFlashReady(SR, 1U << 16, 0U, 0U, 500);
+        memWrite32(SR, 0xC3FBU);
+        memWrite32(ACR, savedAcr & ~(7U << 8)); // Disable PRFTEN, ICEN, DCEN during erase/program
+
         uint32_t startPage = (baseAddr - 0x08000000) / pageSz;
         uint32_t endPage = (baseAddr + static_cast<uint32_t>(padded.size()) - 1 - 0x08000000) / pageSz;
         uint32_t numPages = endPage - startPage + 1;
         for (uint32_t idx = 0; idx < numPages; ++idx) {
             if (cb) cb("erase", idx, numPages);
-            waitFlashReady(SR, 1U << 16, 0x3FA, 1, 500);
-            memWrite32(SR, 0x3FB);
+            waitFlashReady(SR, 1U << 16, 0xC3FAU, 1U, 500);
+            memWrite32(SR, 0xC3FBU);
             uint32_t p = startPage + idx;
-            memWrite32(CR, (1U << 1) | ((p & 0x7F) << 3));
-            memWrite32(CR, (1U << 1) | ((p & 0x7F) << 3) | (1U << 16));
-            waitFlashReady(SR, 1U << 16, 0x3FA, 1, 1000);
+            memWrite32(CR, (1U << 1) | ((p & 0xFFU) << 3));
+            memWrite32(CR, (1U << 1) | ((p & 0xFFU) << 3) | (1U << 16));
+            waitFlashReady(SR, 1U << 16, 0xC3FAU, 1U, 1000);
         }
         if (cb) cb("erase", numPages, numPages);
 
         memWrite32(CR, 1U << 0); // PG = 1
         uint32_t totalBytes = static_cast<uint32_t>(padded.size());
-        for (uint32_t off = 0; off < totalBytes; off += 8) {
-            uint32_t w0 = getLE32(&padded[off]);
-            uint32_t w1 = getLE32(&padded[off + 4]);
-            uint32_t addr = baseAddr + off;
-            memWrite64(addr, w0, w1);
-            waitFlashReady(SR, 1U << 16, 0x3FA, 1, 500);
-            if (cb && ((off & 0x7FF) == 0 || off + 8 >= totalBytes)) {
-                cb("program", off + 8, totalBytes);
-            }
+        for (uint32_t off = 0; off < totalBytes; off += kSramChunkMax) {
+            uint32_t cnt = (std::min)(kSramChunkMax, totalBytes - off);
+            runSramFlashStub(kStubG4L4, sizeof(kStubG4L4) / sizeof(kStubG4L4[0]),
+                             baseAddr + off, &padded[off], cnt, 8U, SR, 1U << 16, 0xC3FAU, off == 0);
+            if (cb) cb("program", off + cnt, totalBytes);
         }
+        memWrite32(CR, 0U);
         memWrite32(CR, 1U << 31);
+        memWrite32(ACR, (savedAcr & ~(7U << 8)) | (3U << 11)); // ICRST | DCRST
+        memWrite32(ACR, savedAcr);
     } catch (...) {
+        try { memWrite32(CR, 0U); } catch (...) {}
         try { memWrite32(CR, 1U << 31); } catch (...) {}
+        try { memWrite32(ACR, savedAcr); } catch (...) {}
         throw;
     }
 }
@@ -826,11 +878,12 @@ Stm32TargetInfo CmsisDapClient::massErase(uint32_t clockHz, bool connectUnderRes
                 memWrite32(KEYR, FLASH_KEY1);
                 memWrite32(KEYR, FLASH_KEY2);
             }
-            waitFlashReady(SR, 1U << 16, 0x3FA, 1, 1000);
-            memWrite32(SR, 0x3FB);
+            waitFlashReady(SR, 1U << 16, 0U, 0U, 1000);
+            memWrite32(SR, 0xC3FBU);
             memWrite32(CR, 1U << 2);
             memWrite32(CR, (1U << 2) | (1U << 16));
-            waitFlashReady(SR, 1U << 16, 0x3FA, 1, 10000);
+            waitFlashReady(SR, 1U << 16, 0xC3FAU, 1U, 10000);
+            memWrite32(CR, 0U);
             memWrite32(CR, 1U << 31);
         } else {
             throw std::runtime_error("Chua ho tro Mass Erase cho " + info.name);
@@ -886,6 +939,69 @@ uint32_t CmsisDapClient::readCoreReg(uint8_t regIdx) {
         }
     }
     throw std::runtime_error("DCRSR reg timeout");
+}
+
+void CmsisDapClient::writeCoreReg(uint8_t regIdx, uint32_t val) {
+    memWrite32(0xE000EDF8, val);
+    memWrite32(0xE000EDF4, (1U << 16) | (regIdx & 0x1F));
+    for (int i = 0; i < 50; ++i) {
+        if (memRead32(0xE000EDF0) & (1U << 16)) {
+            return;
+        }
+    }
+    throw std::runtime_error("DCRSR write timeout");
+}
+
+void CmsisDapClient::runSramFlashStub(const uint32_t* stubWords, size_t stubWordCount,
+                                      uint32_t dstAddr, const uint8_t* chunkData, size_t chunkBytes,
+                                      uint32_t unitSize, uint32_t srAddr, uint32_t bsyMask, uint32_t errMask,
+                                      bool uploadStub) {
+    if (uploadStub) {
+        std::vector<uint32_t> code(stubWords, stubWords + stubWordCount);
+        memWriteBlock(kSramCodeBase, code);
+    }
+
+    size_t wordCount = (chunkBytes + 3U) / 4U;
+    std::vector<uint32_t> dataWords(wordCount, 0xFFFFFFFFU);
+    for (size_t i = 0; i < wordCount; ++i) {
+        dataWords[i] = getLE32(&chunkData[i * 4U]);
+    }
+    memWriteBlock(kSramBufBase, dataWords);
+
+    writeCoreReg(0, kSramBufBase);
+    writeCoreReg(1, dstAddr);
+    writeCoreReg(2, static_cast<uint32_t>(chunkBytes / unitSize));
+    writeCoreReg(3, srAddr);
+    writeCoreReg(4, bsyMask);
+    writeCoreReg(5, errMask);
+    writeCoreReg(13, kSramStackTop);
+    writeCoreReg(15, kSramCodeBase);
+    writeCoreReg(16, 0x01000000U);
+
+    // Mask pending interrupts while halted before resuming SRAM stub
+    memWrite32(0xE000EDF0, 0xA05F000BU);
+    memWrite32(0xE000EDF0, 0xA05F0009U);
+
+    bool halted = false;
+    ULONGLONG t0 = GetTickCount64();
+    while (GetTickCount64() - t0 < 5000) {
+        if (memRead32(0xE000EDF0) & (1U << 17)) {
+            halted = true;
+            break;
+        }
+        Sleep(2);
+    }
+    if (!halted) {
+        try { memWrite32(0xE000EDF0, 0xA05F0003U); } catch (...) {}
+        throw std::runtime_error("SRAM flashloader timeout @ " + hex32(dstAddr));
+    }
+
+    uint32_t res = readCoreReg(0);
+    if (res != 0U) {
+        uint32_t eopBit = (srAddr == 0x4002200CU) ? 0x20U : 1U;
+        try { memWrite32(srAddr, errMask | eopBit); } catch (...) {}
+        throw std::runtime_error("Flash controller error SR=" + hex32(res));
+    }
 }
 
 CpuDebugStatus CmsisDapClient::readCpuStatus(uint32_t clockHz, bool connectUnderReset) {

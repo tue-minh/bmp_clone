@@ -35,6 +35,8 @@ public:
 
 private:
     HANDLE handle_ = INVALID_HANDLE_VALUE;
+    HANDLE evW_ = nullptr;
+    HANDLE evR_ = nullptr;
     uint16_t inLen_ = 65;
     uint16_t outLen_ = 65;
 };

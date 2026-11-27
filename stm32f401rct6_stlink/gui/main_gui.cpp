@@ -268,6 +268,22 @@ static std::wstring getSelectedOcdTargetCfg() {
     return kOcdTargets[idx].cfg;
 }
 
+static void syncOcdTargetCombo(const std::string& family) {
+    if (!g_cmbOcdTarget) return;
+    int idx = -1;
+    if (family == "F4" || family == "F2") idx = 0;
+    else if (family == "F1") idx = 1;
+    else if (family == "F3") idx = 2;
+    else if (family == "G4") idx = 3;
+    else if (family == "L4") idx = 4;
+    else if (family == "F0") idx = 5;
+    else if (family == "G0") idx = 6;
+    else if (family == "H7") idx = 7;
+    if (idx >= 0) {
+        PostMessageW(g_cmbOcdTarget, CB_SETCURSEL, static_cast<WPARAM>(idx), 0);
+    }
+}
+
 static void updateActionButtonsState() {
     bool canOperate = g_targetConnected && !g_busy.load();
     bool notBusy = !g_busy.load();
@@ -471,6 +487,7 @@ static void doConnect() {
         postLog("[SWD] Connecting and reading Chip ID + 512B Flash @ 0x08000000...");
         Stm32TargetInfo info = dap.probeTarget(speed, underReset, true);
         try { dap.hostStatus(0, true); } catch (...) {}
+        syncOcdTargetCombo(info.family);
         postLog("[SWD] Connected: " + info.name + " | Flash=" + std::to_string(info.flashKB) + " KB");
 
         auto* txt = new std::wstring(formatTargetInfoText(info));
@@ -581,6 +598,7 @@ static void doFlash() {
 
         Stm32TargetInfo refreshed = dap.probeTarget(speed, false, true);
         try { dap.hostStatus(0, true); } catch (...) {}
+        syncOcdTargetCombo(refreshed.family);
         auto* txt = new std::wstring(formatTargetInfoText(refreshed));
         PostMessageW(g_hMainWnd, WM_APP_CONNECT_DONE, 1, reinterpret_cast<LPARAM>(txt));
     });
@@ -712,6 +730,7 @@ static void doErase() {
 
         Stm32TargetInfo refreshed = dap.probeTarget(speed, false, true);
         try { dap.hostStatus(0, true); } catch (...) {}
+        syncOcdTargetCombo(refreshed.family);
         auto* txt = new std::wstring(formatTargetInfoText(refreshed));
         PostMessageW(g_hMainWnd, WM_APP_CONNECT_DONE, 1, reinterpret_cast<LPARAM>(txt));
     });
